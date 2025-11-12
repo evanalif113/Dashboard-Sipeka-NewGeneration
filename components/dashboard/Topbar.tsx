@@ -50,8 +50,8 @@ export function Topbar({ user, profile, setSidebarOpen, handleLogout, navigation
           <div className="flex items-center gap-3">
             <div className="relative h-8 w-8">
               <Image
-                src="/img/logo.webp" // Using the logo from public/img/logo.png
-                alt="Meteo Sense Logo"
+                src="/img/favicon.ico" // Using the logo from public/img/logo.png
+                alt="Logo SIPEKA"
                 fill
                 className="object-contain"
               />
@@ -59,7 +59,7 @@ export function Topbar({ user, profile, setSidebarOpen, handleLogout, navigation
             
             <div className="flex flex-col">
               <h1 className="text-lg font-semibold text-gray-900 dark:text-white leading-none">
-                Meteo Sense
+                SIPEKA
               </h1>
               <span className="text-xs text-gray-500 dark:text-gray-400">
                 {currentPage} {/* Display current page name */}

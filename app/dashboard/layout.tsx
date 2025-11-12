@@ -3,7 +3,7 @@
 import type React from "react"
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { LayoutDashboard, Network, FileText, Database, Earth, ChartNoAxesCombined, User } from "lucide-react"
+import { LayoutDashboard, Network, Database, ChartNoAxesCombined, User } from "lucide-react"
 import { useAuth } from "@/hooks/useAuth"
 import { signOutUser } from "@/lib/FetchingAuth"
 import { Sidebar } from "@/components/dashboard/Sidebar"
@@ -46,10 +46,8 @@ export default function DashboardLayout({
   const navigation: NavigationItem[] = [
     { name: "Beranda", href: "/dashboard", icon: LayoutDashboard },
     { name: "Perangkat", href: "/dashboard/perangkat", icon: Network },
-    { name: "Peta", href: "/dashboard/peta", icon: Earth },
     { name: "Data", href: "/dashboard/data", icon: Database },
     { name: "Analisis", href: "/dashboard/analisis", icon: ChartNoAxesCombined },
-    { name: "Laporan", href: "/dashboard/laporan", icon: FileText },
     { name: "Profil", href: "/dashboard/profil", icon: User },
   ]
 

@@ -7,6 +7,7 @@ import { Sun, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { NavigationItem } from "./navigation"
+import Image from "next/image"
 
 interface SidebarProps {
   navigation: NavigationItem[]
@@ -42,10 +43,8 @@ export function Sidebar({ navigation, sidebarOpen, setSidebarOpen }: SidebarProp
     <div className="flex flex-col h-full bg-gray-200 dark:bg-slate-900 border border-gray-300 dark:border-gray-700 rounded-md overflow-hidden shadow-md lg:m-4 m-3">
       {/* Header with logo - mobile only, since we're showing logo in Topbar on desktop */}
       <div className="flex items-center h-16 px-4 bg-gray-200 dark:bg-slate-900 border-b border-gray-300 dark:border-gray-700 lg:hidden">
-        <div className="p-2 bg-orange-600 rounded-md shadow-md">
-          <Sun className="h-6 w-6 text-white" />
-        </div>
-        <span className="ml-2 text-lg font-bold text-gray-900 dark:text-white flex-1">Meteo Sense</span>
+        <Image src="/img/favicon.ico" alt="SIPEKA Logo" width={32} height={32} />
+        <span className="ml-2 text-lg font-bold text-gray-900 dark:text-white flex-1">SIPEKA</span>
         {/* Close button - mobile only */}
         <Button
           variant="ghost"

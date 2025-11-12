@@ -18,7 +18,7 @@ export function DesktopSidebar({ navigation }: DesktopSidebarProps) {
           <div className="p-2 bg-orange-600 rounded-md shadow-md">
             <Sun className="h-6 w-6 text-white" />
           </div>
-          <span className="ml-2 text-lg font-bold text-gray-900 dark:text-white">Meteo Sense</span>
+          <span className="ml-2 text-lg font-bold text-gray-900 dark:text-white">SIPEKA</span>
         </div>
         <nav className="flex-1 space-y-1 px-3 py-5 bg-gradient-to-b from-white to-blue-50 dark:from-gray-900 dark:to-gray-800">
           {navigation.map((item) => {
