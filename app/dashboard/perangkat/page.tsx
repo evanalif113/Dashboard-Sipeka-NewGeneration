@@ -143,17 +143,16 @@ function AddDeviceDialog({ open, onOpenChange, onAddDevice, onTokenGenerated, tr
       {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent className="dark:bg-gray-900">
         <DialogHeader>
-          <DialogTitle className="dark:text-gray-100">Tambah Stasiun Cuaca Baru</DialogTitle>
-          <DialogDescription className="dark:text-gray-400">Tambahkan stasiun monitoring baru ke jaringan Anda</DialogDescription>
+          <DialogTitle className="dark:text-gray-100">Tambah Perangkat</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 py-4 text-gray-800 dark:text-gray-300">
           <div className="grid gap-2">
-            <Label htmlFor="name">Nama Stasiun</Label>
-            <Input id="name" placeholder="Nama Stasiun" value={newDevice.name} onChange={(e) => setNewDevice({ ...newDevice, name: e.target.value })} />
+            <Label htmlFor="name">Nama Perangkat</Label>
+            <Input id="name" placeholder="Nama Perangkat" value={newDevice.name} onChange={(e) => setNewDevice({ ...newDevice, name: e.target.value })} />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="location">Lokasi</Label>
-            <Input id="location" placeholder="Lokasi Stasiun" value={newDevice.location} onChange={(e) => setNewDevice({ ...newDevice, location: e.target.value })} />
+            <Input id="location" placeholder="Lokasi Perangkat" value={newDevice.location} onChange={(e) => setNewDevice({ ...newDevice, location: e.target.value })} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
@@ -510,9 +509,9 @@ export default function PerangkatPage() {
         <div className="flex flex-col items-center justify-center text-center p-16 mt-10 border-2 border-dashed rounded-lg bg-gray-50 dark:bg-gray-800/50 dark:border-gray-700 max-w-2xl mx-auto">
           <HardDrive className="h-16 w-16 text-gray-400 dark:text-gray-500 mb-6" />
           <h2 className="text-2xl font-semibold text-gray-700 dark:text-gray-200">Belum Ada Perangkat</h2>
-          <p className="text-gray-500 dark:text-gray-400 mt-2 mb-6 max-w-md">Mulai dengan menambahkan perangkat monitoring pertama Anda untuk melihat data cuaca secara real-time.</p>
+          <p className="text-gray-500 dark:text-gray-400 mt-2 mb-6 max-w-md">Mulai dengan menambahkan perangkat monitoring pertama Anda untuk melihat data</p>
           <Button
-            className="px-6 py-3 rounded-lg flex items-center text-base"
+            className="px-6 py-3 rounded-lg flex items-center text-base bg-blue-600 hover:bg-blue-600/50 text-white"
             onClick={() => setShowAddDialog(true)}
           >
             <Plus className="h-5 w-5 mr-2" />
