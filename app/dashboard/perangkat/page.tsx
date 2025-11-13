@@ -373,7 +373,7 @@ function DeviceTokenDialog({ open, onOpenChange, token }: {
           </div>
         </div>
         <DialogFooter>
-          <Button onClick={() => onOpenChange(false)}>Tutup</Button>
+          <Button variant="default" className="bg-blue-600 hover:bg-blue-600/50 text-white" onClick={() => onOpenChange(false)}>Tutup</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

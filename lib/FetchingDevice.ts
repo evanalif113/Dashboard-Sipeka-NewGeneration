@@ -9,6 +9,7 @@ import {
   getDoc,
   setDoc,
   Timestamp,
+  where,
 } from "firebase/firestore"
 import { db } from "@/lib/ConfigFirebase"
 import { addLogEvent } from "@/lib/FetchingLogs"
@@ -51,10 +52,10 @@ const formatDate = (date: Date) => {
 
 export async function fetchAllDevices(userId: string): Promise<Device[]> {
   try {
-    // Path diubah menjadi sub-koleksi di bawah user
-    const devicesRef = collection(db, "users", userId, "devices")
-    // Query 'where' tidak lagi diperlukan karena path sudah spesifik untuk user
-    const q = query(devicesRef)
+    // Path diubah menjadi koleksi root 'devices'
+    const devicesRef = collection(db, "devices")
+    // Tambahkan query untuk memfilter berdasarkan userId
+    const q = query(devicesRef, where("userId", "==", userId))
     const querySnapshot = await getDocs(q)
 
     const devices: Device[] = []
@@ -87,12 +88,12 @@ export async function fetchAllDevices(userId: string): Promise<Device[]> {
 
 export async function fetchDevice(userId: string, deviceId: string): Promise<Device | null> {
   try {
-    // Path diubah menjadi sub-koleksi di bawah user
-    const deviceRef = doc(db, "users", userId, "devices", deviceId)
+    // Path diubah menjadi koleksi root 'devices'
+    const deviceRef = doc(db, "devices", deviceId)
     const docSnap = await getDoc(deviceRef)
 
-    if (!docSnap.exists()) {
-      console.warn(`Device ${deviceId} not found for user ${userId}.`)
+    if (!docSnap.exists() || docSnap.data().userId !== userId) {
+      console.warn(`Device ${deviceId} not found or access denied for user ${userId}.`)
       return null
     }
 
@@ -128,8 +129,8 @@ export async function addDevice(
 
     const token = deviceData.authToken ? deviceData.authToken : newId
 
-    // Path diubah menjadi sub-koleksi di bawah user
-    const deviceRef = doc(db, "users", deviceData.userId, "devices", newId)
+    // Path diubah menjadi koleksi root 'devices'
+    const deviceRef = doc(db, "devices", newId)
 
     const newDeviceData = {
       ...deviceData,
@@ -164,8 +165,15 @@ export async function updateDevice(
   deviceData: Partial<Omit<Device, "id">>
 ): Promise<Device | null> {
   try {
-    // Path diubah menjadi sub-koleksi di bawah user
-    const deviceRef = doc(db, "users", userId, "devices", deviceId)
+    // Path diubah menjadi koleksi root 'devices'
+    const deviceRef = doc(db, "devices", deviceId)
+
+    // Verifikasi bahwa pengguna memiliki izin untuk mengedit perangkat ini
+    const deviceSnap = await getDoc(deviceRef)
+    if (!deviceSnap.exists() || deviceSnap.data().userId !== userId) {
+      throw new Error("Device not found or permission denied.")
+    }
+
     await updateDoc(deviceRef, {
       ...deviceData,
       updatedAt: serverTimestamp(),
@@ -188,10 +196,11 @@ export async function updateDevice(
 
 export async function deleteDevice(userId: string, deviceId: string): Promise<boolean> {
   try {
-    // Path diubah menjadi sub-koleksi di bawah user
-    const deviceRef = doc(db, "users", userId, "devices", deviceId)
+    // Path diubah menjadi koleksi root 'devices'
+    const deviceRef = doc(db, "devices", deviceId)
     const deviceSnap = await getDoc(deviceRef)
-    if (!deviceSnap.exists()) {
+    if (!deviceSnap.exists() || deviceSnap.data().userId !== userId) {
+      console.warn(`Device ${deviceId} not found or permission denied for user ${userId}.`)
       return false
     }
     const device = deviceSnap.data() as Device
@@ -209,10 +218,11 @@ export async function deleteDevice(userId: string, deviceId: string): Promise<bo
 
 export async function generateDeviceToken(userId: string, deviceId: string): Promise<DeviceToken | null> {
   try {
-    // Path diubah menjadi sub-koleksi di bawah user
-    const deviceRef = doc(db, "users", userId, "devices", deviceId)
+    // Path diubah menjadi koleksi root 'devices'
+    const deviceRef = doc(db, "devices", deviceId)
     const deviceSnap = await getDoc(deviceRef)
-    if (!deviceSnap.exists()) {
+    if (!deviceSnap.exists() || deviceSnap.data().userId !== userId) {
+      console.warn(`Device ${deviceId} not found or permission denied for user ${userId}.`)
       return null
     }
     const device = deviceSnap.data() as Device

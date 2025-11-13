@@ -11,6 +11,7 @@ import {
   doc,
   Timestamp,
   QueryConstraint,
+  getDoc,
 } from "firebase/firestore"
 import { db } from "@/lib/ConfigFirebase" // Menggunakan instance Firestore
 
@@ -22,6 +23,7 @@ export interface LogEvent {
   timestamp: Date
   device: string
   deviceId: string
+  userId: string // Tambahkan kembali userId
 }
 
 export interface LogFilters {
@@ -42,15 +44,17 @@ function formatLog(doc: any): LogEvent {
     timestamp: (data.timestamp as Timestamp).toDate(), // Konversi Firestore Timestamp ke Date
     device: data.device,
     deviceId: data.deviceId,
+    userId: data.userId, // Ambil userId dari dokumen
   }
 }
 
 export async function fetchLogs(userId: string, limitCount = 100): Promise<LogEvent[]> {
   try {
-    // Path koleksi sekarang: users/{userId}/logs
-    const logsCollection = collection(db, "users", userId, "logs")
+    // Path koleksi sekarang: 'logs' di root
+    const logsCollection = collection(db, "logs")
     const q = query(
       logsCollection,
+      where("userId", "==", userId), // Filter berdasarkan userId
       orderBy("timestamp", "desc"),
       limit(limitCount)
     )
@@ -69,9 +73,9 @@ export async function fetchLogs(userId: string, limitCount = 100): Promise<LogEv
 
 export async function fetchFilteredLogs(userId: string, filters: LogFilters): Promise<LogEvent[]> {
   try {
-    // Path koleksi sekarang: users/{userId}/logs
-    const logsCollection = collection(db, "users", userId, "logs")
-    const queryConstraints: QueryConstraint[] = [] // Tidak perlu 'where("userId", "=="...)' lagi
+    // Path koleksi sekarang: 'logs' di root
+    const logsCollection = collection(db, "logs")
+    const queryConstraints: QueryConstraint[] = [where("userId", "==", userId)] // Selalu filter berdasarkan userId
 
     // Apply server-side filters
     if (filters.type) {
@@ -127,10 +131,11 @@ export async function fetchFilteredLogs(userId: string, filters: LogFilters): Pr
 
 export async function fetchRecentAlerts(userId: string, limitCount = 5): Promise<LogEvent[]> {
   try {
-    // Path koleksi sekarang: users/{userId}/logs
-    const logsCollection = collection(db, "users", userId, "logs")
+    // Path koleksi sekarang: 'logs' di root
+    const logsCollection = collection(db, "logs")
     const q = query(
       logsCollection,
+      where("userId", "==", userId), // Filter berdasarkan userId
       where("severity", "in", ["high", "medium"]), // Ambil alert dengan severity tinggi atau medium
       orderBy("timestamp", "desc"),
       limit(limitCount)
@@ -157,10 +162,10 @@ export async function addLogEvent(
   deviceName: string
 ): Promise<void> {
   try {
-    // Path koleksi sekarang: users/{userId}/logs
-    const logsCollection = collection(db, "users", userId, "logs")
+    // Path koleksi sekarang: 'logs' di root
+    const logsCollection = collection(db, "logs")
     await addDoc(logsCollection, {
-      // userId tidak perlu disimpan di dalam dokumen lagi
+      userId, // Simpan userId di dalam dokumen
       deviceId,
       type,
       message,
@@ -176,8 +181,15 @@ export async function addLogEvent(
 
 export async function deleteLogEvent(userId: string, logId: string): Promise<void> {
   try {
-    // Path dokumen sekarang: users/{userId}/logs/{logId}
-    const logDocRef = doc(db, "users", userId, "logs", logId)
+    // Path dokumen sekarang: logs/{logId}
+    const logDocRef = doc(db, "logs", logId)
+
+    // Verifikasi bahwa pengguna memiliki izin untuk menghapus log ini
+    const logSnap = await getDoc(logDocRef)
+    if (!logSnap.exists() || logSnap.data().userId !== userId) {
+      throw new Error("Log not found or permission denied.")
+    }
+
     await deleteDoc(logDocRef)
   } catch (error) {
     console.error("Error deleting log event from Firestore:", error)
