@@ -22,7 +22,7 @@ export function fetchDeviceLocation(): Promise<DeviceCoordinates> {
     //    - timeout: Waktu maksimum (ms) untuk mendapatkan posisi.
     //    - maximumAge: Waktu maksimum (ms) dari posisi cache yang dapat diterima.
     const options: PositionOptions = {
-      enableHighAccuracy: true,
+      enableHighAccuracy: false,
       timeout: 10000, // 10 detik
       maximumAge: 0 // Tidak menggunakan posisi cache, selalu coba dapatkan yang terbaru
     };
@@ -31,10 +31,12 @@ export function fetchDeviceLocation(): Promise<DeviceCoordinates> {
       (position) => {
         // 3. Destrukturisasi untuk kejelasan
         const { latitude, longitude } = position.coords;
-        resolve({
-          lat: latitude,
-          lng: longitude,
-        });
+
+        // Batasi jumlah angka di belakang koma menjadi 6 digit
+        const lat = +latitude.toFixed(6);
+        const lng = +longitude.toFixed(6);
+
+        resolve({ lat, lng });
       },
       (error) => {
         // 4. Perbaiki pesan error agar lebih informatif

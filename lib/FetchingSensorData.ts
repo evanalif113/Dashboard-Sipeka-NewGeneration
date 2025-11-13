@@ -1,30 +1,34 @@
 // lib/FetchingSensorData.ts
-import { rtdb } from "@/lib/ConfigFirebase"; // Mengimpor instance Realtime Database yang sudah diinisialisasi
+import { db } from "@/lib/ConfigFirebase"; // Mengimpor instance FIRESTORE
 import {
-  ref,
+  collection,
   query,
-  orderByKey,
-  limitToLast,
-  get,
-  remove,
-  update,
-  startAt,
-  endAt
-} from "firebase/database"; // Tambahkan 'update' // Ini adalah fungsi-fungsi dari Firebase Realtime Database SDK
+  orderBy,
+  limit,
+  getDocs,
+  deleteDoc,
+  updateDoc,
+  where,
+  Timestamp,
+  doc,
+  writeBatch,
+} from "firebase/firestore"; // Fungsi-fungsi dari Firestore SDK
 
+// Interface tetap sama, namun kita akan menggunakan timestamp Firestore
 export interface SensorValue {
   temperature: number;
   humidity: number;
   pressure: number;
   dew: number;
   rainfall: number;
-  rainrate: number
+  rainrate: number;
   volt: number;
 }
 
 export interface SensorDate extends SensorValue {
+  id: string; // Document ID from Firestore
   timestamp: number; // UNIX timestamp in milliseconds
-  dateFormatted: string; // Optional, if you want to store a formatted date
+  dateFormatted: string;
   timeFormatted: string;
 }
 
@@ -33,141 +37,110 @@ export interface SensorMetaData {
   TelemetryStatus: "online" | "offline";
 }
 
+// Helper untuk memformat data dari Firestore
+function formatData(doc: any): SensorDate {
+  const data = doc.data();
+  const timestampInMillis = (data.timestamp as Timestamp).toMillis();
+
+  const date = new Date(timestampInMillis);
+  const timeZone = "Asia/Jakarta";
+
+  const timeFormatted = date.toLocaleTimeString("id-ID", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  const dateFormatted = date.toLocaleDateString("id-ID", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+  return {
+    id: doc.id,
+    timestamp: timestampInMillis,
+    temperature: data.temperature,
+    humidity: data.humidity,
+    pressure: data.pressure,
+    dew: data.dew,
+    volt: data.volt,
+    rainfall: data.rainfall,
+    rainrate: data.rainrate,
+    dateFormatted: `${dateFormatted} ${timeFormatted}`,
+    timeFormatted: timeFormatted,
+  };
+}
+
 /**
- * Mengambil data sensor dalam rentang waktu yang ditentukan.
- * @param sensorId - ID sensor yang datanya akan diambil.
+ * Mengambil data sensor dalam rentang waktu yang ditentukan dari Firestore.
+ * @param sensorId - ID sensor (nama koleksi).
  * @param startTimestamp - Timestamp awal dalam milidetik.
  * @param endTimestamp - Timestamp akhir dalam milidetik.
- * @returns Sebuah promise yang resolve dengan array data sensor dalam rentang waktu tersebut.
+ * @returns Sebuah promise yang resolve dengan array data sensor.
  */
 export async function fetchSensorDataByDateRange(
   sensorId: string,
   startTimestamp: number,
   endTimestamp: number
 ): Promise<SensorDate[]> {
-  console.log("fetchSensorDataByTimestampRange called with:", {
+  console.log("fetchSensorDataByDateRange (Firestore) called with:", {
     sensorId,
     startTimestamp,
     endTimestamp,
   });
 
   try {
-    // 1. Konversi timestamp milidetik ke string detik untuk query Firebase
-    const startKey = String(Math.floor(startTimestamp / 1000));
-    const endKey = String(Math.floor(endTimestamp / 1000));
-
-    // 2. Buat query dengan orderByKey dan rentang startAt/endAt
-    const dataRef = query(
-      ref(rtdb, `auto_weather_stat/${sensorId}/data`),
-      orderByKey(),
-      startAt(startKey),
-      endAt(endKey)
+    const dataCollectionRef = collection(db, sensorId);
+    const q = query(
+      dataCollectionRef,
+      where("timestamp", ">=", Timestamp.fromMillis(startTimestamp)),
+      where("timestamp", "<=", Timestamp.fromMillis(endTimestamp)),
+      orderBy("timestamp", "asc") // Urutkan dari yang terlama ke terbaru
     );
 
-    const snapshot = await get(dataRef);
+    const querySnapshot = await getDocs(q);
 
-    if (!snapshot.exists()) {
+    if (querySnapshot.empty) {
       console.log("No sensor data found in the specified range.");
       return [];
     }
 
-    const results: SensorDate[] = [];
-
-    // Proses snapshot, sama seperti di fungsi fetchSensorData
-    snapshot.forEach((child) => {
-      const timestampInSeconds = Number(child.key);
-      const timestampInMillis = timestampInSeconds * 1000;
-      console.log("Processing timestamp (ms):", timestampInMillis);
-      const data: SensorValue = child.val();
-      console.log("Sensor value from child:", data);
-
-      const formattedTime = new Date(timestampInMillis)
-        .toLocaleString("id-ID", 
-        {
-          timeZone: "Asia/Jakarta",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hour12: false,
-        }
-      ).replace(/\./g, ":");
-      console.log("Formatted time:", formattedTime);
-      // 2.1 Format tanggal jika diperlukan
-      const dateFormatted = new Date(timestampInMillis)
-        .toLocaleString("id-ID", 
-        {
-          timeZone: "Asia/Jakarta",
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hour12: false,
-        }
-      ).replace(/\./g, ":");
-      console.log("Formatted date:", dateFormatted);
-      const resultItem = {
-        timestamp: timestampInMillis, // Simpan dalam milidetik
-        temperature: data.temperature,
-        humidity: data.humidity,
-        pressure: data.pressure,
-        dew: data.dew,
-        volt: data.volt,
-        rainfall: data.rainfall,
-        rainrate: data.rainrate,
-        dateFormatted: dateFormatted,
-        timeFormatted: formattedTime,
-      };
-      console.log("Pushing item to results:", resultItem);
-      results.push(resultItem);
-    });
-
-    // Data dari query rentang sudah otomatis terurut secara kronologis
+    const results: SensorDate[] = querySnapshot.docs.map(formatData);
     return results;
   } catch (error) {
-    console.error("Gagal mengambil data sensor dalam rentang waktu:", error);
+    console.error("Gagal mengambil data sensor dalam rentang waktu (Firestore):", error);
     throw error;
   }
 }
 
 /**
- * Mengambil metadata dan status sensor terakhir.
- * Status "online" jika data terakhir kurang dari 3 menit, jika tidak "offline".
- * @param sensorId - ID sensor yang akan diperiksa.
+ * Mengambil metadata dan status sensor terakhir dari Firestore.
+ * @param sensorId - ID sensor (nama koleksi).
  * @returns Sebuah promise yang resolve dengan metadata sensor.
  */
 export async function fetchSensorMetadata(
   sensorId: string
 ): Promise<SensorMetaData> {
   try {
-    const dataRef = query(
-      ref(rtdb, `auto_weather_stat/${sensorId}/data`),
-      orderByKey(),
-      limitToLast(1)
-    );
+    const dataCollectionRef = collection(db, sensorId);
+    const q = query(dataCollectionRef, orderBy("timestamp", "desc"), limit(1));
 
-    const snapshot = await get(dataRef);
+    const querySnapshot = await getDocs(q);
 
-    if (!snapshot.exists()) {
-      // Jika tidak ada data, anggap offline dan kembalikan nilai default
+    if (querySnapshot.empty) {
       return {
         sensorId: sensorId,
         TelemetryStatus: "offline",
       };
     }
 
-    let latestData: SensorValue | null = null;
-    let latestTimestamp: number | null = null;
-
-    snapshot.forEach((child) => {
-      latestTimestamp = Number(child.key) * 1000; // konversi ke milidetik
-      latestData = child.val();
-    });
-
-    if (!latestData || !latestTimestamp) {
-      throw new Error("Gagal memproses data snapshot.");
-    }
+    const latestDoc = querySnapshot.docs[0];
+    const latestData = latestDoc.data();
+    const latestTimestamp = (latestData.timestamp as Timestamp).toMillis();
 
     const currentTime = Date.now();
     const timeDifference = currentTime - latestTimestamp;
@@ -181,161 +154,114 @@ export async function fetchSensorMetadata(
       TelemetryStatus: status,
     };
   } catch (error) {
-    console.error(`Gagal mengambil metadata untuk sensor ${sensorId}:`, error);
+    console.error(`Gagal mengambil metadata untuk sensor ${sensorId} (Firestore):`, error);
     throw error;
   }
 }
 
 /**
- * Memperbarui status dari satu aktuator spesifik.
- * @param sensorId - ID sensor yang datanya akan diupdate.
- * @param limit - Berapa Poin data yang akan diambil.
- * @returns Sebuah promise yang akan resolve ketika get data selesai.
+ * Mengambil data sensor terakhir dari Firestore.
+ * @param sensorId - ID sensor (nama koleksi).
+ * @param limitCount - Jumlah data terakhir yang akan diambil.
+ * @returns Sebuah promise yang resolve dengan array data sensor.
  */
-
 export async function fetchSensorData(
   sensorId: string,
-  limit: number,
+  limitCount: number
 ): Promise<SensorDate[]> {
-  console.log("fetchSensorData called with:", { sensorId, limit });
-  
+  console.log("fetchSensorData (Firestore) called with:", { sensorId, limit: limitCount });
+
   try {
-    const dataRef = query(
-      ref(rtdb, `auto_weather_stat/${sensorId}/data`),
-      orderByKey(),
-      limitToLast(limit)
+    const dataCollectionRef = collection(db, sensorId);
+    const q = query(
+      dataCollectionRef,
+      orderBy("timestamp", "desc"),
+      limit(limitCount)
     );
 
-    const snapshot = await get(dataRef);
+    const querySnapshot = await getDocs(q);
 
-    if (!snapshot.exists()) {
+    if (querySnapshot.empty) {
       console.log("No sensor data found.");
       return [];
     }
 
-    const results: SensorDate[] = [];
-
-    snapshot.forEach((child) => {
-      // 1. Ambil timestamp dari KEY (detik), dan konversi ke milidetik untuk JS
-      const timestampInSeconds = Number(child.key);
-      const timestampInMillis = timestampInSeconds * 1000;
-      console.log("Processing timestamp (ms):", timestampInMillis);
-      const data: SensorValue = child.val();
-      console.log("Sensor value from child:", data);
-
-      // 2. Format waktu menggunakan timestamp yang benar
-      const formattedTime = new Date(timestampInMillis)
-      .toLocaleString('id-ID',
-        {
-          timeZone: "Asia/Jakarta", // Pastikan zona waktu sesuai
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hour12: false,
-        }
-      ).replace(/\./g, ':');  //replace untuk mengganti titik dengan titik dua
-      console.log("Formatted time:", formattedTime);
-      // 2.1 Format tanggal jika diperlukan
-      const dateFormatted = new Date(timestampInMillis)
-      .toLocaleString('id-ID',
-        {
-          timeZone: "Asia/Jakarta", // Pastikan zona waktu sesuai
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hour12: false,
-        }
-      ).replace(/\./g, ':');  //replace untuk mengganti titik dengan titik dua
-      console.log("Formatted time:", dateFormatted);
-      // 3. Gabungkan semua data sesuai interface SensorData
-      const resultItem = {
-        timestamp: timestampInMillis, // Simpan dalam milidetik
-        temperature: data.temperature,
-        humidity: data.humidity,
-        pressure: data.pressure,
-        dew: data.dew,
-        volt: data.volt,
-        rainfall: data.rainfall,
-        rainrate: data.rainrate,
-        dateFormatted: dateFormatted,
-        timeFormatted: formattedTime,
-      };
-      console.log("Pushing item to results:", resultItem);
-      results.push(resultItem);
-    });
-
-    // 4. Balik urutan array agar data terbaru berada di indeks pertama
-    const reversedResults = results;
-    return reversedResults;
-
-  } 
-  catch (error) {
-    console.error("Gagal mengambil data sensor:", error);
-    // Melempar kembali error
+    // Data diambil dalam urutan descending, kita balik agar menjadi ascending (kronologis)
+    const results: SensorDate[] = querySnapshot.docs.map(formatData).reverse();
+    return results;
+  } catch (error) {
+    console.error("Gagal mengambil data sensor (Firestore):", error);
     throw error;
   }
 }
 
 /**
- * Menghapus semua data sensor untuk sensorId tertentu.
- * @param sensorId - ID sensor yang datanya akan dihapus.
+ * Menghapus semua data sensor untuk sensorId tertentu di Firestore.
+ * @param sensorId - ID sensor (nama koleksi).
  * @returns Sebuah promise yang akan resolve ketika data berhasil dihapus.
  */
 export async function deleteSensorData(sensorId: string): Promise<void> {
-  console.log(`deleteSensorData called for sensorId: ${sensorId}`);
+  console.log(`deleteSensorData (Firestore) called for collection: ${sensorId}`);
   try {
-    const dataRef = ref(rtdb, `auto_weather_stat/${sensorId}/data`);
-    await remove(dataRef);
-    console.log(`Successfully deleted data for sensor ${sensorId}`);
+    const dataCollectionRef = collection(db, sensorId);
+    const q = query(dataCollectionRef);
+    const querySnapshot = await getDocs(q);
+
+    if (querySnapshot.empty) {
+      console.log(`No data to delete in collection ${sensorId}.`);
+      return;
+    }
+
+    // Gunakan batch write untuk efisiensi
+    const batch = writeBatch(db);
+    querySnapshot.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+
+    await batch.commit();
+    console.log(`Successfully deleted all data in collection ${sensorId}`);
   } catch (error) {
-    console.error(`Gagal menghapus data untuk sensor ${sensorId}:`, error);
+    console.error(`Gagal menghapus data di koleksi ${sensorId} (Firestore):`, error);
     throw error;
   }
 }
 
 /**
- * Mengedit data sensor berdasarkan timestamp.
- * @param sensorId - ID sensor.
- * @param timestamp - Timestamp (milidetik) data yang akan diedit.
- * @param newData - Data baru yang akan diupdate (partial).
+ * Mengedit data sensor berdasarkan ID dokumen di Firestore.
+ * @param sensorId - ID sensor (nama koleksi).
+ * @param docId - ID dokumen di Firestore.
+ * @param newData - Data baru yang akan diupdate.
  */
-export async function editSensorDataByTimestamp(
+export async function editSensorDataByDocId(
   sensorId: string,
-  timestamp: number,
+  docId: string,
   newData: Partial<SensorValue>
 ): Promise<void> {
-  // Konversi timestamp ke detik (key di database)
-  const timestampInSeconds = Math.floor(timestamp / 1000);
-  const dataRef = ref(rtdb, `auto_weather_stat/${sensorId}/data/${timestampInSeconds}`);
+  const docRef = doc(db, sensorId, docId);
   try {
-    await update(dataRef, newData);
-    console.log(`Data sensor pada timestamp ${timestampInSeconds} berhasil diupdate.`);
+    await updateDoc(docRef, newData);
+    console.log(`Data sensor dengan docId ${docId} berhasil diupdate.`);
   } catch (error) {
-    console.error(`Gagal mengedit data sensor pada timestamp ${timestampInSeconds}:`, error);
+    console.error(`Gagal mengedit data sensor dengan docId ${docId}:`, error);
     throw error;
   }
 }
 
 /**
- * Menghapus data sensor berdasarkan timestamp.
- * @param sensorId - ID sensor.
- * @param timestamp - Timestamp (milidetik) data yang akan dihapus.
+ * Menghapus data sensor berdasarkan ID dokumen di Firestore.
+ * @param sensorId - ID sensor (nama koleksi).
+ * @param docId - ID dokumen di Firestore.
  */
-export async function deleteSensorDataByTimestamp(
+export async function deleteSensorDataByDocId(
   sensorId: string,
-  timestamp: number
+  docId: string
 ): Promise<void> {
-  // Konversi timestamp ke detik (key di database)
-  const timestampInSeconds = Math.floor(timestamp / 1000);
-  const dataRef = ref(rtdb, `auto_weather_stat/${sensorId}/data/${timestampInSeconds}`);
+  const docRef = doc(db, sensorId, docId);
   try {
-    await remove(dataRef);
-    console.log(`Data sensor pada timestamp ${timestampInSeconds} berhasil dihapus.`);
+    await deleteDoc(docRef);
+    console.log(`Data sensor dengan docId ${docId} berhasil dihapus.`);
   } catch (error) {
-    console.error(`Gagal menghapus data sensor pada timestamp ${timestampInSeconds}:`, error);
+    console.error(`Gagal menghapus data sensor dengan docId ${docId}:`, error);
     throw error;
   }
 }

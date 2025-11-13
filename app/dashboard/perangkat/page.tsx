@@ -76,7 +76,7 @@ function DeviceCard({ device, onEdit, onDelete, onGenerateToken }: {
           <Button variant="default" size="sm" className="flex-1 bg-blue-600 hover:bg-blue-600/50 text-white" onClick={() => onEdit(device)}>
             <Edit className="h-3 w-3 mr-1" /> Edit
           </Button>
-          <Button variant="default" size="sm" className="flex-1 bg-green-600 hover:bg-green-600/50 text-white" onClick={() => onGenerateToken(device.authToken ? device.id : "")}>
+          <Button variant="default" size="sm" className="flex-1 bg-green-600 hover:bg-green-600/50 text-white" onClick={() => onGenerateToken(device.id)}>
             <Key className="h-3 w-3 mr-1" /> Token
           </Button>
           <Button variant="default" size="sm" className="flex-1 bg-red-600 hover:bg-red-600/50 text-white" onClick={() => onDelete({ id: device.id, name: device.name })}>
@@ -280,7 +280,7 @@ function EditDeviceDialog({ open, onOpenChange, device, onEditDevice, setEditing
         </DialogHeader>
         <div className="grid gap-4 py-4 text-gray-800 dark:text-gray-300">
           <div className="grid gap-2">
-            <Label htmlFor="edit-name">Nama Stasiun</Label>
+            <Label htmlFor="edit-name">Nama Perangkat</Label>
             <Input id="edit-name" value={device.name} onChange={(e) => setEditingDevice({ ...device, name: e.target.value })} />
           </div>
           <div className="grid gap-2">
@@ -439,8 +439,9 @@ export default function PerangkatPage() {
   }
 
   const handleEditDevice = async () => {
-    if (!editingDevice) return
-    const updated = await updateDevice(editingDevice.id, editingDevice)
+    if (!editingDevice || !uid) return
+    const { id, ...deviceData } = editingDevice
+    const updated = await updateDevice(uid, id, deviceData)
     if (updated) {
       setDevices((prev) =>
         prev.map((d) => (d.id === updated.id ? { ...d, ...updated } : d))
@@ -451,8 +452,8 @@ export default function PerangkatPage() {
   }
 
   const handleDeleteDevice = async () => {
-    if (!deletingDevice) return
-    const success = await deleteDevice(deletingDevice.id)
+    if (!deletingDevice || !uid) return
+    const success = await deleteDevice(uid, deletingDevice.id)
     if (success) {
       setDevices((prev) => prev.filter((d) => d.id !== deletingDevice.id))
     }
@@ -461,7 +462,8 @@ export default function PerangkatPage() {
   }
 
   const handleGenerateToken = async (id: string) => {
-    const result = await generateDeviceToken(id)
+    if (!uid) return
+    const result = await generateDeviceToken(uid, id)
     if (result) {
       setToken(result.token)
       setShowTokenDialog(true)

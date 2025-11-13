@@ -12,7 +12,7 @@ export default function robots(): MetadataRoute.Robots {
         allow: '/',
       }
     ],
-    sitemap: `https://meteo.jerukagunglabs.web.id/sitemap.xml`,
-    host: `https://meteo.jerukagunglabs.web.id`,
+    sitemap: `https://sipeka.jeris.web.id/sitemap.xml`,
+    host: `https://sipeka.jeris.web.id`,
   }
 }

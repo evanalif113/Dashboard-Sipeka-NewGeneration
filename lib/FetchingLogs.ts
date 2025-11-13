@@ -1,5 +1,18 @@
-import { ref, set, get, query, limitToLast, orderByKey, remove } from "firebase/database"
-import { rtdb } from "@/lib/ConfigFirebase"
+// filepath: d:\Github\Dashboard-Sipeka\lib\FetchingLogs.ts
+import {
+  collection,
+  query,
+  where,
+  orderBy,
+  limit,
+  getDocs,
+  addDoc,
+  deleteDoc,
+  doc,
+  Timestamp,
+  QueryConstraint,
+} from "firebase/firestore"
+import { db } from "@/lib/ConfigFirebase" // Menggunakan instance Firestore
 
 export interface LogEvent {
   id: string
@@ -9,7 +22,6 @@ export interface LogEvent {
   timestamp: Date
   device: string
   deviceId: string
-  userId: string
 }
 
 export interface LogFilters {
@@ -19,63 +31,55 @@ export interface LogFilters {
   dateRange?: string
 }
 
-export async function fetchLogs(userId: string, limit = 100): Promise<LogEvent[]> {
-  try {
-    const logsRef = ref(rtdb, `logs/${userId}`)
-    const logsQuery = query(logsRef, orderByKey(), limitToLast(limit))
-    const snapshot = await get(logsQuery)
+// Helper untuk mengubah dokumen Firestore menjadi objek LogEvent
+function formatLog(doc: any): LogEvent {
+  const data = doc.data()
+  return {
+    id: doc.id,
+    type: data.type,
+    message: data.message,
+    severity: data.severity,
+    timestamp: (data.timestamp as Timestamp).toDate(), // Konversi Firestore Timestamp ke Date
+    device: data.device,
+    deviceId: data.deviceId,
+  }
+}
 
-    if (!snapshot.exists()) {
+export async function fetchLogs(userId: string, limitCount = 100): Promise<LogEvent[]> {
+  try {
+    // Path koleksi sekarang: users/{userId}/logs
+    const logsCollection = collection(db, "users", userId, "logs")
+    const q = query(
+      logsCollection,
+      orderBy("timestamp", "desc"),
+      limit(limitCount)
+    )
+    const querySnapshot = await getDocs(q)
+
+    if (querySnapshot.empty) {
       return []
     }
 
-    const logs: LogEvent[] = []
-    snapshot.forEach((childSnapshot) => {
-      const data = childSnapshot.val()
-      logs.push({
-        id: childSnapshot.key!,
-        type: data.type,
-        message: data.message,
-        severity: data.severity,
-        timestamp: new Date(data.timestamp),
-        device: data.device,
-        deviceId: data.deviceId,
-        userId: data.userId || userId,
-      })
-    })
-
-    return logs.reverse() // Most recent first
+    return querySnapshot.docs.map(formatLog)
   } catch (error) {
-    console.error("Error fetching logs:", error)
+    console.error("Error fetching logs from Firestore:", error)
     return []
   }
 }
 
 export async function fetchFilteredLogs(userId: string, filters: LogFilters): Promise<LogEvent[]> {
   try {
-    const allLogs = await fetchLogs(userId, 500) // Get more logs for filtering
+    // Path koleksi sekarang: users/{userId}/logs
+    const logsCollection = collection(db, "users", userId, "logs")
+    const queryConstraints: QueryConstraint[] = [] // Tidak perlu 'where("userId", "=="...)' lagi
 
-    let filteredLogs = allLogs
-
-    // Apply search filter
-    if (filters.searchTerm) {
-      const searchTerm = filters.searchTerm.toLowerCase()
-      filteredLogs = filteredLogs.filter(
-        (log) => log.message.toLowerCase().includes(searchTerm) || log.device.toLowerCase().includes(searchTerm),
-      )
-    }
-
-    // Apply type filter
+    // Apply server-side filters
     if (filters.type) {
-      filteredLogs = filteredLogs.filter((log) => log.type === filters.type)
+      queryConstraints.push(where("type", "==", filters.type))
     }
-
-    // Apply severity filter
     if (filters.severity) {
-      filteredLogs = filteredLogs.filter((log) => log.severity === filters.severity)
+      queryConstraints.push(where("severity", "==", filters.severity))
     }
-
-    // Apply date range filter
     if (filters.dateRange) {
       const now = new Date()
       let startDate: Date
@@ -91,25 +95,55 @@ export async function fetchFilteredLogs(userId: string, filters: LogFilters): Pr
           startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
           break
         default:
-          startDate = new Date(0)
+          startDate = new Date(0) // A very old date to include everything
       }
-
-      filteredLogs = filteredLogs.filter((log) => log.timestamp >= startDate)
+      queryConstraints.push(where("timestamp", ">=", Timestamp.fromDate(startDate)))
     }
 
-    return filteredLogs
+    // Add ordering
+    queryConstraints.push(orderBy("timestamp", "desc"))
+
+    const q = query(logsCollection, ...queryConstraints)
+    const querySnapshot = await getDocs(q)
+
+    let logs = querySnapshot.docs.map(formatLog)
+
+    // Apply client-side search filter (Firestore doesn't support partial text search well)
+    if (filters.searchTerm) {
+      const searchTerm = filters.searchTerm.toLowerCase()
+      logs = logs.filter(
+        (log) =>
+          log.message.toLowerCase().includes(searchTerm) ||
+          log.device.toLowerCase().includes(searchTerm)
+      )
+    }
+
+    return logs
   } catch (error) {
-    console.error("Error filtering logs:", error)
+    console.error("Error filtering logs from Firestore:", error)
     return []
   }
 }
 
-export async function fetchRecentAlerts(userId: string, limit = 5): Promise<LogEvent[]> {
+export async function fetchRecentAlerts(userId: string, limitCount = 5): Promise<LogEvent[]> {
   try {
-    const allLogs = await fetchLogs(userId, 100)
-    return allLogs.filter((log) => log.type === "alert" || log.severity === "high").slice(0, limit)
+    // Path koleksi sekarang: users/{userId}/logs
+    const logsCollection = collection(db, "users", userId, "logs")
+    const q = query(
+      logsCollection,
+      where("severity", "in", ["high", "medium"]), // Ambil alert dengan severity tinggi atau medium
+      orderBy("timestamp", "desc"),
+      limit(limitCount)
+    )
+    const querySnapshot = await getDocs(q)
+
+    if (querySnapshot.empty) {
+      return []
+    }
+
+    return querySnapshot.docs.map(formatLog)
   } catch (error) {
-    console.error("Error fetching recent alerts:", error)
+    console.error("Error fetching recent alerts from Firestore:", error)
     return []
   }
 }
@@ -120,32 +154,33 @@ export async function addLogEvent(
   type: LogEvent["type"],
   message: string,
   severity: LogEvent["severity"],
-  deviceName: string,
+  deviceName: string
 ): Promise<void> {
   try {
-    const timestamp = Date.now()
-    const logRef = ref(rtdb, `logs/${userId}/${timestamp}`)
-    await set(logRef, {
+    // Path koleksi sekarang: users/{userId}/logs
+    const logsCollection = collection(db, "users", userId, "logs")
+    await addDoc(logsCollection, {
+      // userId tidak perlu disimpan di dalam dokumen lagi
       deviceId,
       type,
       message,
       severity,
-      timestamp: timestamp,
       device: deviceName,
-      userId,
+      timestamp: Timestamp.now(), // Gunakan Timestamp server
     })
   } catch (error) {
-    console.error("Error adding log event:", error)
+    console.error("Error adding log event to Firestore:", error)
     throw error
   }
 }
 
 export async function deleteLogEvent(userId: string, logId: string): Promise<void> {
   try {
-    const logRef = ref(rtdb, `logs/${userId}/${logId}`)
-    await remove(logRef)
+    // Path dokumen sekarang: users/{userId}/logs/{logId}
+    const logDocRef = doc(db, "users", userId, "logs", logId)
+    await deleteDoc(logDocRef)
   } catch (error) {
-    console.error("Error deleting log event:", error)
+    console.error("Error deleting log event from Firestore:", error)
     throw error
   }
 }

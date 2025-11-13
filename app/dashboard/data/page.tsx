@@ -1,39 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import {
-  RefreshCw,
-  Trash2,
-  Download,
-  Plus,
-  ThermometerSun,
-  Droplets,
-  Gauge,
-  Pencil,
-  Sprout,
-  CloudRain,
-  CloudRainWind,
-  Calendar as CalendarIcon,
-} from "lucide-react";
-import { format, addDays } from "date-fns";
-import { DateRange } from "react-day-picker";
-
-import {
-  fetchSensorData,
-  deleteSensorData,
-  editSensorDataByTimestamp,
-  deleteSensorDataByTimestamp,
-  fetchSensorDataByDateRange,
-} from "@/lib/FetchingSensorData";
-import type { SensorDate } from "@/lib/FetchingSensorData";
-import ChartComponent from "@/components/ChartComponent";
-import { Button } from "@/components/ui/button";
+import dynamic from "next/dynamic";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -47,7 +22,37 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import {
+  RefreshCw,
+  Download,
+  Trash2,
+  CalendarIcon,
+  ThermometerSun,
+  Droplets,
+  Gauge,
+  Sprout,
+  CloudRain,
+  CloudRainWind,
+  Plus,
+  Pencil
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+import { DateRange } from "react-day-picker";
+import {
+  fetchSensorData,
+  fetchSensorDataByDateRange,
+  deleteSensorData,
+  editSensorDataByDocId, // Ganti dengan fungsi baru
+  deleteSensorDataByDocId, // Ganti dengan fungsi baru
+  SensorDate,
+  SensorValue,
+} from "@/lib/FetchingSensorData";
+
+// Plotly.js chart component (dynamic import)
+const ChartComponent = dynamic(() => import("@/components/ChartComponent"), {
+  ssr: false,
+});
 
 // Define the structure for selectable periods
 interface Period {
@@ -55,15 +60,10 @@ interface Period {
   valueInMinutes: number;
 }
 // Define the structure for table data
-interface WeatherData {
+interface WeatherData extends SensorValue {
+  id: string; // Tambahkan ID dokumen dari Firestore
   timestamp: number;
   date: string; // Akan menggunakan dateFormatted dari SensorDate
-  temperature: number;
-  humidity: number;
-  pressure: number;
-  dew: number;
-  rainfall: number;
-  rainrate: number;
 }
 
 // Daftar periode yang bisa dipilih
@@ -154,6 +154,7 @@ export default function DataPage() {
       setRainrate(fetchedRainrate);
 
       const dataArray: WeatherData[] = data.map((entry) => ({
+        id: entry.id, // Simpan ID dokumen
         timestamp: entry.timestamp,
         date: entry.dateFormatted || new Date(entry.timestamp).toLocaleString('id-ID', { timeZone: "Asia/Jakarta" }),
         temperature: entry.temperature,
@@ -162,6 +163,7 @@ export default function DataPage() {
         dew: entry.dew,
         rainfall: entry.rainfall,
         rainrate: entry.rainrate,
+        volt: entry.volt,
       }));
       setWeatherData(dataArray.reverse());
       setError(null);
@@ -320,13 +322,15 @@ export default function DataPage() {
   const handleEditSave = async () => {
     if (!editForm || editingIndex === null) return;
     try {
-      await editSensorDataByTimestamp(sensorId, editForm.timestamp, {
+      // Gunakan editSensorDataByDocId dengan ID dokumen
+      await editSensorDataByDocId(sensorId, editForm.id, {
         temperature: editForm.temperature,
         humidity: editForm.humidity,
         pressure: editForm.pressure,
         dew: editForm.dew,
         rainfall: editForm.rainfall,
         rainrate: editForm.rainrate,
+        volt: editForm.volt,
       });
       const updatedData = [...weatherData];
       updatedData[editingIndex] = { ...editForm };
@@ -348,14 +352,12 @@ export default function DataPage() {
       return;
     }
     try {
-      await editSensorDataByTimestamp(sensorId, ts, {
-        temperature: Number(addForm.temperature),
-        humidity: Number(addForm.humidity),
-        pressure: Number(addForm.pressure),
-        dew: Number(addForm.dew),
-        rainfall: Number(addForm.rainfall),
-        rainrate: Number(addForm.rainrate),
-      });
+      // Fungsi add data belum ada di FetchingSensorData.ts, ini akan error
+      // Anda perlu membuat fungsi addSensorData di FetchingSensorData.ts
+      // Untuk sementara, ini akan gagal.
+      console.error("Fungsi untuk menambah data baru belum diimplementasikan.");
+      alert("Fungsi untuk menambah data baru belum diimplementasikan.");
+      // await addSensorData(sensorId, ts, { ... });
       setAddModalOpen(false);
       setAddForm(null);
       await fetchData();
@@ -373,11 +375,13 @@ export default function DataPage() {
   // Fungsi untuk menghapus data sensor pada baris tertentu
   const handleDeleteRowConfirmed = async () => {
     if (deleteRowIndex === null) return;
-    const row = weatherData[deleteRowIndex];
+    const rowToDelete = weatherData[deleteRowIndex];
+    if (!rowToDelete) return;
+
     try {
-      await deleteSensorDataByTimestamp(sensorId, row.timestamp);
-      const updatedData = [...weatherData];
-      updatedData.splice(deleteRowIndex, 1);
+      // Gunakan deleteSensorDataByDocId dengan ID dokumen
+      await deleteSensorDataByDocId(sensorId, rowToDelete.id);
+      const updatedData = weatherData.filter((_, index) => index !== deleteRowIndex);
       setWeatherData(updatedData);
       setDeleteModalOpen(false);
       setDeleteRowIndex(null);

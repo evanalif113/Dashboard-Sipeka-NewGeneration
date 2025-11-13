@@ -5,14 +5,13 @@ import {
   updateDoc,
   deleteDoc,
   query,
-  where,
   serverTimestamp,
   getDoc,
   setDoc,
-  Timestamp, 
+  Timestamp,
 } from "firebase/firestore"
 import { db } from "@/lib/ConfigFirebase"
-import { addLogEvent, LogEvent } from "@/lib/FetchingLogs"
+import { addLogEvent } from "@/lib/FetchingLogs"
 
 export interface Device {
   id: string
@@ -52,8 +51,10 @@ const formatDate = (date: Date) => {
 
 export async function fetchAllDevices(userId: string): Promise<Device[]> {
   try {
-    const devicesRef = collection(db, "devices")
-    const q = query(devicesRef, where("userId", "==", userId))
+    // Path diubah menjadi sub-koleksi di bawah user
+    const devicesRef = collection(db, "users", userId, "devices")
+    // Query 'where' tidak lagi diperlukan karena path sudah spesifik untuk user
+    const q = query(devicesRef)
     const querySnapshot = await getDocs(q)
 
     const devices: Device[] = []
@@ -73,7 +74,7 @@ export async function fetchAllDevices(userId: string): Promise<Device[]> {
         registrationDate: registrationDate,
         coordinates: data.coordinates || { lat: 0.0, lng: 0.0 },
         userId: data.userId,
-        authToken: data.authToken
+        authToken: data.authToken,
       })
     })
 
@@ -84,13 +85,14 @@ export async function fetchAllDevices(userId: string): Promise<Device[]> {
   }
 }
 
-export async function fetchDevice(deviceId: string): Promise<Device | null> {
+export async function fetchDevice(userId: string, deviceId: string): Promise<Device | null> {
   try {
-    const deviceRef = doc(db, "devices", deviceId)
+    // Path diubah menjadi sub-koleksi di bawah user
+    const deviceRef = doc(db, "users", userId, "devices", deviceId)
     const docSnap = await getDoc(deviceRef)
 
     if (!docSnap.exists()) {
-      console.warn(`Device ${deviceId} not found.`)
+      console.warn(`Device ${deviceId} not found for user ${userId}.`)
       return null
     }
 
@@ -118,7 +120,7 @@ export async function fetchDevice(deviceId: string): Promise<Device | null> {
 }
 
 export async function addDevice(
-  deviceData: Omit<Device, "id" | "authToken" | "registrationDate"> & { authToken?: string, customId?: string },
+  deviceData: Omit<Device, "id" | "authToken" | "registrationDate"> & { authToken?: string; customId?: string }
 ): Promise<Device> {
   try {
     const timestamp = serverTimestamp()
@@ -126,7 +128,8 @@ export async function addDevice(
 
     const token = deviceData.authToken ? deviceData.authToken : newId
 
-    const deviceRef = doc(db, "devices", newId)
+    // Path diubah menjadi sub-koleksi di bawah user
+    const deviceRef = doc(db, "users", deviceData.userId, "devices", newId)
 
     const newDeviceData = {
       ...deviceData,
@@ -137,7 +140,6 @@ export async function addDevice(
       authToken: token,
     }
 
-    // Use setDoc with the custom or auto ID
     await setDoc(deviceRef, newDeviceData)
 
     const newDevice: Device = {
@@ -147,7 +149,6 @@ export async function addDevice(
       authToken: token,
     }
 
-    // Log device creation
     await addLogEvent(deviceData.userId, newId, "configuration", "Device created", "low", newDevice.name)
 
     return newDevice
@@ -158,11 +159,13 @@ export async function addDevice(
 }
 
 export async function updateDevice(
+  userId: string,
   deviceId: string,
-  deviceData: Partial<Omit<Device, "id">>,
+  deviceData: Partial<Omit<Device, "id">>
 ): Promise<Device | null> {
   try {
-    const deviceRef = doc(db, "devices", deviceId)
+    // Path diubah menjadi sub-koleksi di bawah user
+    const deviceRef = doc(db, "users", userId, "devices", deviceId)
     await updateDoc(deviceRef, {
       ...deviceData,
       updatedAt: serverTimestamp(),
@@ -174,8 +177,7 @@ export async function updateDevice(
     }
     const updatedData = docSnap.data() as Device
 
-    // Log device update
-    await addLogEvent(updatedData.userId, deviceId, "configuration", "Device updated", "low", updatedData.name)
+    await addLogEvent(userId, deviceId, "configuration", "Device updated", "low", updatedData.name)
 
     return { ...updatedData, id: deviceId }
   } catch (error) {
@@ -184,9 +186,10 @@ export async function updateDevice(
   }
 }
 
-export async function deleteDevice(deviceId: string): Promise<boolean> {
+export async function deleteDevice(userId: string, deviceId: string): Promise<boolean> {
   try {
-    const deviceRef = doc(db, "devices", deviceId)
+    // Path diubah menjadi sub-koleksi di bawah user
+    const deviceRef = doc(db, "users", userId, "devices", deviceId)
     const deviceSnap = await getDoc(deviceRef)
     if (!deviceSnap.exists()) {
       return false
@@ -195,8 +198,7 @@ export async function deleteDevice(deviceId: string): Promise<boolean> {
 
     await deleteDoc(deviceRef)
 
-    // Log device deletion
-    await addLogEvent(device.userId, deviceId, "configuration", "Device deleted", "medium", device.name)
+    await addLogEvent(userId, deviceId, "configuration", "Device deleted", "medium", device.name)
 
     return true
   } catch (error) {
@@ -205,21 +207,19 @@ export async function deleteDevice(deviceId: string): Promise<boolean> {
   }
 }
 
-export async function generateDeviceToken(deviceId: string): Promise<DeviceToken | null> {
+export async function generateDeviceToken(userId: string, deviceId: string): Promise<DeviceToken | null> {
   try {
-    const deviceRef = doc(db, "devices", deviceId)
+    // Path diubah menjadi sub-koleksi di bawah user
+    const deviceRef = doc(db, "users", userId, "devices", deviceId)
     const deviceSnap = await getDoc(deviceRef)
     if (!deviceSnap.exists()) {
       return null
     }
     const device = deviceSnap.data() as Device
 
-    // For simplicity, we'll just return the existing token (which is the device ID).
-    // If a new token is needed, generate it and update the document.
     const token = device.authToken || device.id
 
-    // Log token generation
-    await addLogEvent(device.userId, deviceId, "configuration", "Authentication token retrieved", "low", device.name)
+    await addLogEvent(userId, deviceId, "configuration", "Authentication token retrieved", "low", device.name)
 
     return { token, deviceId }
   } catch (error) {
