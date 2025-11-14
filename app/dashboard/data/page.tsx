@@ -28,13 +28,11 @@ import {
   Trash2,
   CalendarIcon,
   ThermometerSun,
-  Droplets,
-  Gauge,
-  Sprout,
-  CloudRain,
-  CloudRainWind,
+  Waves,
+  Wind,
   Plus,
-  Pencil
+  Edit,
+  Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -43,11 +41,13 @@ import {
   fetchSensorData,
   fetchSensorDataByDateRange,
   deleteSensorData,
-  editSensorDataByDocId, // Ganti dengan fungsi baru
-  deleteSensorDataByDocId, // Ganti dengan fungsi baru
+  editSensorDataByTimestamp,
+  deleteSensorDataByTimestamp,
   SensorDate,
   SensorValue,
 } from "@/lib/FetchingSensorData";
+import { useAuth } from "@/hooks/useAuth";
+import { fetchAllDevices } from "@/lib/FetchingDevice";
 
 // Plotly.js chart component (dynamic import)
 const ChartComponent = dynamic(() => import("@/components/ChartComponent"), {
@@ -60,10 +60,13 @@ interface Period {
   valueInMinutes: number;
 }
 // Define the structure for table data
-interface WeatherData extends SensorValue {
-  id: string; // Tambahkan ID dokumen dari Firestore
+interface WeatherData {
+  id: string; // Kunci dari RTDB (timestamp)
   timestamp: number;
-  date: string; // Akan menggunakan dateFormatted dari SensorDate
+  date: string;
+  suhu: number;
+  ph_level: number;
+  amonia: number;
 }
 
 // Daftar periode yang bisa dipilih
@@ -76,26 +79,13 @@ const periods: Period[] = [
   { label: "24 Jam", valueInMinutes: 24 * 60 },
 ];
 
-// Daftar Sensor
-const sensorOptions = [
-  { label: "Sensor 1", value: "id-01" },
-  { label: "Sensor 2", value: "id-02" },
-  { label: "Sensor 3", value: "id-03" },
-  { label: "Sensor 4", value: "id-04" },
-  { label: "Sensor 5", value: "id-05" },
-  { label: "Sensor 6", value: "id-06" },
-  { label: "Sensor 7", value: "id-07" }
-];
-
 export default function DataPage() {
+  const { user } = useAuth();
   // State untuk data grafik (array terpisah)
   const [timestamps, setTimestamps] = useState<string[]>([]); // Akan menggunakan timeFormatted
-  const [temperatures, setTemperatures] = useState<number[]>([]); //Float64
-  const [humidity, setHumidity] = useState<number[]>([]); //Float64
-  const [pressure, setPressure] = useState<number[]>([]); //Float64
-  const [dew, setDew] = useState<number[]>([]); //Float64
-  const [rainfall, setRainfall] = useState<number[]>([]); //Float64
-  const [rainrate, setRainrate] = useState<number[]>([]); //Float64
+  const [temperatures, setTemperatures] = useState<number[]>([]);
+  const [phLevels, setPhLevels] = useState<number[]>([]);
+  const [ammoniaLevels, setAmmoniaLevels] = useState<number[]>([]);
 
   // State untuk data tabel
   const [weatherData, setWeatherData] = useState<WeatherData[]>([]);
@@ -112,7 +102,8 @@ export default function DataPage() {
   const itemsPerPage = 15; // Jumlah item per halaman
 
   // State untuk sensor dan jumlah data
-  const [sensorId, setSensorId] = useState("id-03");
+  const [sensorOptions, setSensorOptions] = useState<{ label: string; value: string }[]>([]);
+  const [sensorId, setSensorId] = useState("");
   const [selectedPeriod, setSelectedPeriod] = useState<Period>(periods[1]); // Default 1 Jam
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
 
@@ -127,43 +118,64 @@ export default function DataPage() {
   const [addForm, setAddForm] = useState<{
     datetime: string;
     temperature: number;
-    humidity: number;
-    pressure: number;
-    dew: number;
-    rainfall: number;
-    rainrate: number;
+    phlevel: number;
+    ammonia: number;
   } | null>(null);
+
+  // Fetch devices for the sensor dropdown
+  useEffect(() => {
+    const loadDevices = async () => {
+      if (user?.uid) {
+        setLoading(true);
+        try {
+          const devices = await fetchAllDevices(user.uid);
+          if (devices && devices.length > 0) {
+            const options = devices.map((device) => ({
+              label: device.name,
+              // Gunakan authToken sebagai value, fallback ke id jika tidak ada
+              value: device.authToken || device.id,
+            }));
+            setSensorOptions(options);
+            // Set the first device's token as the default selected sensor
+            if (!sensorId && options.length > 0) {
+              setSensorId(options[0].value);
+            }
+          } else {
+            setSensorOptions([]);
+            setError("Tidak ada perangkat yang terdaftar. Silakan tambahkan perangkat terlebih dahulu.");
+          }
+        } catch (err) {
+          console.error("Failed to fetch devices:", err);
+          setError("Gagal memuat daftar perangkat.");
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadDevices();
+  }, [user, sensorId]);
 
   // Fungsi untuk memproses dan mengatur state data
   const processAndSetData = (data: SensorDate[]) => {
     if (data.length > 0) {
       const fetchedTimestamps: string[] = data.map(d => d.timeFormatted || new Date(d.timestamp).toLocaleString('id-ID', { timeZone: "Asia/Jakarta" }));
-      const fetchedTemperatures: number[] = data.map(d => d.temperature);
-      const fetchedHumidity: number[] = data.map(d => d.humidity);
-      const fetchedPressure: number[] = data.map(d => d.pressure);
-      const fetchedDew: number[] = data.map(d => d.dew);
-      const fetchedRainfall: number[] = data.map(d => d.rainfall);
-      const fetchedRainrate: number[] = data.map(d => d.rainrate);
+      const fetchedTemperatures: number[] = data.map(d => d.suhu);
+      const fetchedPhLevels: number[] = data.map(d => d.ph_level);
+      const fetchedAmmoniaLevels: number[] = data.map(d => d.amonia);
 
       setTimestamps(fetchedTimestamps);
       setTemperatures(fetchedTemperatures);
-      setHumidity(fetchedHumidity);
-      setPressure(fetchedPressure);
-      setDew(fetchedDew);
-      setRainfall(fetchedRainfall);
-      setRainrate(fetchedRainrate);
+      setPhLevels(fetchedPhLevels);
+      setAmmoniaLevels(fetchedAmmoniaLevels);
 
       const dataArray: WeatherData[] = data.map((entry) => ({
-        id: entry.id, // Simpan ID dokumen
+        id: entry.id, // Simpan kunci RTDB
         timestamp: entry.timestamp,
         date: entry.dateFormatted || new Date(entry.timestamp).toLocaleString('id-ID', { timeZone: "Asia/Jakarta" }),
-        temperature: entry.temperature,
-        humidity: entry.humidity,
-        pressure: entry.pressure,
-        dew: entry.dew,
-        rainfall: entry.rainfall,
-        rainrate: entry.rainrate,
-        volt: entry.volt,
+        suhu: entry.suhu,
+        ph_level: entry.ph_level,
+        amonia: entry.amonia,
       }));
       setWeatherData(dataArray.reverse());
       setError(null);
@@ -171,9 +183,8 @@ export default function DataPage() {
     } else {
       setTimestamps([]);
       setTemperatures([]);
-      setHumidity([]);
-      setPressure([]);
-      setDew([]);
+      setPhLevels([]);
+      setAmmoniaLevels([]);
       setWeatherData([]);
       setError("Tidak ada data yang tersedia untuk periode ini.");
     }
@@ -181,18 +192,23 @@ export default function DataPage() {
 
   // Fetch data untuk pembaruan di background (polling)
   const updateData = useCallback(async () => {
+    if (!user?.uid || !sensorId) return; // Jangan fetch jika tidak ada sensorId atau user
     try {
       const dataPoints = selectedPeriod.valueInMinutes;
-      const data = await fetchSensorData(sensorId, dataPoints);
+      const data = await fetchSensorData(user.uid, sensorId, dataPoints);
       processAndSetData(data);
     } catch (err: any) {
       console.error("Gagal melakukan polling data:", err);
       // Optionally set an error state that doesn't disrupt the UI too much
     }
-  }, [sensorId, selectedPeriod]);
+  }, [user?.uid, sensorId, selectedPeriod]);
 
   // Fetch data untuk pemuatan awal atau refresh manual
   const fetchData = useCallback(async () => {
+    if (!user?.uid || !sensorId) {
+      setLoading(false);
+      return; // Jangan fetch jika tidak ada sensorId atau user
+    }
     setLoading(true);
     setError(null);
     try {
@@ -202,6 +218,7 @@ export default function DataPage() {
         const startTimestamp = dateRange.from.getTime();
         const endTimestamp = dateRange.to.getTime();
         data = await fetchSensorDataByDateRange(
+          user.uid,
           sensorId,
           startTimestamp,
           endTimestamp
@@ -209,7 +226,7 @@ export default function DataPage() {
       } else {
         // Fallback to fetch by period
         const dataPoints = selectedPeriod.valueInMinutes;
-        data = await fetchSensorData(sensorId, dataPoints);
+        data = await fetchSensorData(user.uid, sensorId, dataPoints);
       }
       processAndSetData(data);
     } catch (err: any) {
@@ -221,27 +238,26 @@ export default function DataPage() {
       setWeatherData([]);
       setTimestamps([]);
       setTemperatures([]);
-      setHumidity([]);
-      setPressure([]);
-      setDew([]);
-      setRainfall([]);
-      setRainrate([]);
+      setPhLevels([]);
+      setAmmoniaLevels([]);
     } finally {
       setLoading(false);
     }
-  }, [sensorId, selectedPeriod, dateRange]);
+  }, [user?.uid, sensorId, selectedPeriod, dateRange]);
 
   // Inisialisasi komponen dan refresh data
   useEffect(() => {
-    fetchData(); // Panggil untuk pemuatan awal
+    if (sensorId) {
+      fetchData(); // Panggil untuk pemuatan awal
 
-    // Atur interval untuk polling, hanya jika periode tertentu dipilih
-    if (selectedPeriod.valueInMinutes <= 60 && !dateRange) {
-      // Contoh: polling untuk periode 1 jam atau kurang, dan tidak ada date range aktif
-      const interval = setInterval(updateData, 60000); // Panggil updateData untuk polling
-      return () => clearInterval(interval);
+      // Atur interval untuk polling, hanya jika periode tertentu dipilih
+      if (selectedPeriod.valueInMinutes <= 60 && !dateRange) {
+        // Contoh: polling untuk periode 1 jam atau kurang, dan tidak ada date range aktif
+        const interval = setInterval(updateData, 60000); // Panggil updateData untuk polling
+        return () => clearInterval(interval);
+      }
     }
-  }, [fetchData, updateData, selectedPeriod.valueInMinutes, dateRange]);
+  }, [sensorId, fetchData, updateData, selectedPeriod.valueInMinutes, dateRange]);
 
   // Deteksi mode dark dari Tailwind (class 'dark' pada html)
   useEffect(() => {
@@ -262,29 +278,24 @@ export default function DataPage() {
   // Warna dinamis untuk dark/light mode
   const chartColors = {
     temperature: isDarkMode ? "#f87171" : "#ef4444",
-    humidity: isDarkMode ? "#60a5fa" : "#3b82f6",
-    pressure: isDarkMode ? "#fbbf24" : "#f59e0b",
-    dew: isDarkMode ? "#34d399" : "#10b981",
-    rainfall: isDarkMode ? "#22d3ee" : "#06b6d4",
-    rainrate: isDarkMode ? "#c4b5fd" : "#a78bfa",
+    phlevel: isDarkMode ? "#60a5fa" : "#3b82f6",
+    ammonia: isDarkMode ? "#a78bfa" : "#8b5cf6",
   };
 
   // Fungsi untuk menghapus data sensor
   const handleDeleteSensorData = async () => {
     if (window.confirm("Apakah Anda yakin ingin menghapus semua riwayat data untuk sensor ini? Tindakan ini tidak dapat diurungkan.")) {
+      if (!user?.uid) return;
       setIsDeleting(true);
       setError(null);
       try {
-        await deleteSensorData(sensorId);
+        await deleteSensorData(user.uid, sensorId);
         // Kosongkan state di UI setelah berhasil
         setWeatherData([]);
         setTimestamps([]);
         setTemperatures([]);
-        setHumidity([]);
-        setPressure([]);
-        setDew([]);
-        setRainfall([]);
-        setRainrate([]);
+        setPhLevels([]);
+        setAmmoniaLevels([]);
         setCurrentPage(1); // Reset halaman setelah data dihapus
       } catch (err: any) {
         console.error(err);
@@ -309,32 +320,29 @@ export default function DataPage() {
     setAddForm({
       datetime: localISO,
       temperature: 0,
-      humidity: 0,
-      pressure: 0,
-      dew: 0,
-      rainfall: 0,
-      rainrate: 0,
+      phlevel: 0,
+      ammonia: 0,
     });
     setAddModalOpen(true);
   };
 
   // Fungsi untuk menyimpan perubahan edit
   const handleEditSave = async () => {
-    if (!editForm || editingIndex === null) return;
+    if (!editForm || editingIndex === null || !user?.uid) return;
     try {
-      // Gunakan editSensorDataByDocId dengan ID dokumen
-      await editSensorDataByDocId(sensorId, editForm.id, {
-        temperature: editForm.temperature,
-        humidity: editForm.humidity,
-        pressure: editForm.pressure,
-        dew: editForm.dew,
-        rainfall: editForm.rainfall,
-        rainrate: editForm.rainrate,
-        volt: editForm.volt,
+      // Gunakan editSensorDataByTimestamp dengan kunci RTDB (editForm.id)
+      await editSensorDataByTimestamp(user.uid, sensorId, editForm.id, {
+        suhu: editForm.suhu,
+        ph_level: editForm.ph_level,
+        amonia: editForm.amonia,
       });
       const updatedData = [...weatherData];
-      updatedData[editingIndex] = { ...editForm };
-      setWeatherData(updatedData);
+      const targetIndex = weatherData.findIndex(item => item.id === editForm.id);
+      if (targetIndex !== -1) {
+        // Perbarui baris yang sesuai di state lokal
+        updatedData[targetIndex] = { ...editForm };
+        setWeatherData(updatedData);
+      }
       setEditModalOpen(false);
       setEditingIndex(null);
       setEditForm(null);
@@ -374,14 +382,16 @@ export default function DataPage() {
 
   // Fungsi untuk menghapus data sensor pada baris tertentu
   const handleDeleteRowConfirmed = async () => {
-    if (deleteRowIndex === null) return;
-    const rowToDelete = weatherData[deleteRowIndex];
+    if (deleteRowIndex === null || !user?.uid) return;
+    // Dapatkan baris yang akan dihapus dari data yang sudah di-paginate dan diurutkan
+    const rowToDelete = currentTableData[deleteRowIndex];
     if (!rowToDelete) return;
 
     try {
-      // Gunakan deleteSensorDataByDocId dengan ID dokumen
-      await deleteSensorDataByDocId(sensorId, rowToDelete.id);
-      const updatedData = weatherData.filter((_, index) => index !== deleteRowIndex);
+      // Gunakan deleteSensorDataByTimestamp dengan kunci RTDB (rowToDelete.id)
+      await deleteSensorDataByTimestamp(user.uid, sensorId, rowToDelete.id);
+      // Hapus dari state utama (weatherData) berdasarkan ID
+      const updatedData = weatherData.filter((item) => item.id !== rowToDelete.id);
       setWeatherData(updatedData);
       setDeleteModalOpen(false);
       setDeleteRowIndex(null);
@@ -414,9 +424,9 @@ export default function DataPage() {
       alert("Tidak ada data untuk diunduh.");
       return;
     }
-    const headers = ["Waktu", "Suhu (°C)", "Kelembapan (%)", "Tekanan (hPa)", "Titik Embun (°C)", "Curah Hujan (mm)", "Laju Hujan (mm/jam)"];
+    const headers = ["Waktu", "Suhu (°C)", "pH Level", "Amonia (ppm)"];
     const rows = weatherData.map(entry =>
-      `${entry.date},${fmt2(entry.temperature)},${fmt2(entry.humidity)},${fmt2(entry.pressure)},${fmt2(entry.dew)},${fmt2(entry.rainfall)},${fmt2(entry.rainrate)}`
+      `${entry.date},${fmt2(entry.suhu)},${fmt2(entry.ph_level)},${fmt2(entry.amonia)}`
     );
     const csvContent = [headers.join(","), ...rows].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -516,7 +526,7 @@ export default function DataPage() {
       <Card>
         <CardHeader className={`flex flex-row items-center gap-3 ${isDarkMode ? "bg-gray-800" : "bg-gray-50"} border-b py-3 px-6`}>
           <Icon className={`h-5 w-5`} style={{ color }} />
-          <CardTitle className="text-lg">{title}</CardTitle>
+          <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent className="pt-6">
           <ChartComponent data={chartData} layout={layout} />
@@ -679,91 +689,50 @@ export default function DataPage() {
           {/* Data Table Content */}
           {activeTab === 'table' && (
             <Card>
-              <CardContent className="p-0">
+              <CardContent>
                 <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className={isDarkMode ? "bg-gray-800 text-left" : "bg-gray-50 dark:bg-gray-800 text-left"}>
-                        <th className={`p-4 font-medium ${isDarkMode ? "text-gray-200" : "text-gray-600 dark:text-gray-300"} border-b`}>Waktu</th>
-                        <th className={`p-4 font-medium ${isDarkMode ? "text-gray-200" : "text-gray-600 dark:text-gray-300"} border-b`}>Suhu (°C)</th>
-                        <th className={`p-4 font-medium ${isDarkMode ? "text-gray-200" : "text-gray-600 dark:text-gray-300"} border-b`}>Kelembapan (%)</th>
-                        <th className={`p-4 font-medium ${isDarkMode ? "text-gray-200" : "text-gray-600 dark:text-gray-300"} border-b`}>Tekanan (hPa)</th>
-                        <th className={`p-4 font-medium ${isDarkMode ? "text-gray-200" : "text-gray-600 dark:text-gray-300"} border-b`}>Titik Embun (°C)</th>
-                        <th className={`p-4 font-medium ${isDarkMode ? "text-gray-200" : "text-gray-600 dark:text-gray-300"} border-b`}>Curah Hujan (mm)</th>
-                        <th className={`p-4 font-medium ${isDarkMode ? "text-gray-200" : "text-gray-600 dark:text-gray-300"} border-b`}>Laju Hujan (mm/jam)</th>
-                        <th className={`p-4 font-medium ${isDarkMode ? "text-gray-200" : "text-gray-600 dark:text-gray-300"} border-b`}>Aksi</th>
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-800">
+                      <tr>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Waktu</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Suhu (°C)</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">pH Level</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Amonia (ppm)</th>
+                        <th scope="col" className="relative px-6 py-3">
+                          <span className="sr-only">Edit</span>
+                        </th>
                       </tr>
                     </thead>
-                    <tbody id="datalogger">
-                      {currentTableData.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className={`p-8 text-center ${isDarkMode ? "text-gray-200" : "text-gray-600 dark:text-gray-300"}`}>
-                            Tidak ada data yang tersedia.
+                    <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+                      {currentTableData.map((row, index) => (
+                        <tr key={row.id}>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200">{row.date}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{fmt2(row.suhu)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{fmt2(row.ph_level)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{fmt2(row.amonia)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <button onClick={() => openEditModal(row, index)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 mr-4">
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button onClick={() => openDeleteModal(index)} className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                              <Trash2 className="h-4 w-4" />
+                            </button>
                           </td>
                         </tr>
-                      ) : (
-                        currentTableData.map((entry, index) => (
-                          <tr
-                            key={index}
-                            className={isDarkMode
-                              ? (index % 2 === 0 ? "bg-gray-900" : "bg-gray-800")
-                              : (index % 2 === 0 ? "bg-white dark:bg-gray-900" : "bg-gray-50 dark:bg-gray-800")}
-                          >
-                            <td className={`p-4 border-t ${isDarkMode ? "text-gray-200" : ""}`}>{entry.date}</td>
-                            <td className={`p-4 border-t ${isDarkMode ? "text-gray-200" : ""}`}>{fmt2(entry.temperature)}</td>
-                            <td className={`p-4 border-t ${isDarkMode ? "text-gray-200" : ""}`}>{fmt2(entry.humidity)}</td>
-                            <td className={`p-4 border-t ${isDarkMode ? "text-gray-200" : ""}`}>{fmt2(entry.pressure)}</td>
-                            <td className={`p-4 border-t ${isDarkMode ? "text-gray-200" : ""}`}>{fmt2(entry.dew)}</td>
-                            <td className={`p-4 border-t ${isDarkMode ? "text-gray-200" : ""}`}>{fmt2(entry.rainfall)}</td>
-                            <td className={`p-4 border-t ${isDarkMode ? "text-gray-200" : ""}`}>{fmt2(entry.rainrate)}</td>
-                            <td className={`p-4 border-t flex gap-2`}>
-                              <button
-                                className={`p-2 rounded hover:bg-primary-100 dark:hover:bg-primary-900`}
-                                title="Edit"
-                                onClick={() => openEditModal(entry, indexOfFirstItem + index)}
-                              >
-                                <Pencil className={`h-4 w-4 ${isDarkMode ? "text-primary-300" : "text-primary-600"}`} />
-                              </button>
-                              <button
-                                className={`p-2 rounded hover:bg-red-100 dark:hover:bg-red-900`}
-                                title="Hapus"
-                                onClick={() => openDeleteModal(indexOfFirstItem + index)}
-                              >
-                                <Trash2 className={`h-4 w-4 ${isDarkMode ? "text-red-300" : "text-red-600"}`} />
-                              </button>
-                            </td>
-                          </tr>
-                        ))
-                      )}
+                      ))}
                     </tbody>
                   </table>
                 </div>
-                {weatherData.length > itemsPerPage && (
-                  <div className="flex items-center justify-between p-4 border-t bg-slate-200 dark:bg-slate-700">
-                    <Button onClick={handlePreviousPage} disabled={currentPage === 1} variant="outline">
-                      Sebelumnya
-                    </Button>
-                    <span className="text-sm text-gray-800 dark:text-gray-200">
-                      Halaman {currentPage} dari {totalPages}
-                    </span>
-                    <Button onClick={handleNextPage} disabled={currentPage === totalPages} variant="outline">
-                      Berikutnya
-                    </Button>
-                  </div>
-                )}
               </CardContent>
             </Card>
           )}
 
           {/* Grafik Content */}
           {activeTab === 'grafik' && (
-            <div className="space-y-6">
-              <ChartCard title="Suhu Lingkungan (°C)" data={temperatures} color={chartColors.temperature} Icon={ThermometerSun}  />
-              <ChartCard title="Kelembapan Relatif (%)" data={humidity} color={chartColors.humidity} Icon={Droplets} />
-              <ChartCard title="Tekanan Udara (hPa)" data={pressure} color={chartColors.pressure} Icon={Gauge} />
-              <ChartCard title="Titik Embun (°C)" data={dew} color={chartColors.dew} Icon={Sprout}/>
-              <ChartCard title="Curah Hujan (mm)" data={rainfall} color={chartColors.rainfall} Icon={CloudRain} />
-              <ChartCard title="Laju Hujan (mm/jam)" data={rainrate} color={chartColors.rainrate} Icon={CloudRainWind} />
+            <div className="grid grid-cols-1 gap-6">
+              <ChartCard title="Suhu" data={temperatures} color={chartColors.temperature} Icon={ThermometerSun} />
+              <ChartCard title="pH Level" data={phLevels} color={chartColors.phlevel} Icon={Waves} />
+              <ChartCard title="Amonia" data={ammoniaLevels} color={chartColors.ammonia} Icon={Wind} />
             </div>
           )}
         </>
@@ -789,63 +758,30 @@ export default function DataPage() {
                   <input
                     type="number"
                     step="0.01"
-                    value={editForm.temperature}
-                    onChange={e => setEditForm({ ...editForm, temperature: parseFloat(e.target.value) })}
+                    value={editForm.suhu}
+                    onChange={e => setEditForm({ ...editForm, suhu: parseFloat(e.target.value) })}
                     className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm mb-1">Kelembapan (%)</label>
+                  <label className="block text-sm mb-1">pH Level</label>
                   <input
                     type="number"
                     step="0.01"
-                    value={editForm.humidity}
-                    onChange={e => setEditForm({ ...editForm, humidity: parseFloat(e.target.value) })}
+                    value={editForm.ph_level}
+                    onChange={e => setEditForm({ ...editForm, ph_level: parseFloat(e.target.value) })}
                     className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm mb-1">Tekanan (hPa)</label>
+                  <label className="block text-sm mb-1">Amonia (ppm)</label>
                   <input
                     type="number"
                     step="0.01"
-                    value={editForm.pressure}
-                    onChange={e => setEditForm({ ...editForm, pressure: parseFloat(e.target.value) })}
-                    className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">Titik Embun (°C)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={editForm.dew}
-                    onChange={e => setEditForm({ ...editForm, dew: parseFloat(e.target.value) })}
-                    className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">Curah Hujan (mm)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={editForm.rainfall}
-                    onChange={e => setEditForm({ ...editForm, rainfall: parseFloat(e.target.value) })}
-                    className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">Laju Hujan (mm/jam)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={editForm.rainrate}
-                    onChange={e => setEditForm({ ...editForm, rainrate: parseFloat(e.target.value) })}
+                    value={editForm.amonia}
+                    onChange={e => setEditForm({ ...editForm, amonia: parseFloat(e.target.value) })}
                     className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
                     required
                   />
@@ -901,56 +837,23 @@ export default function DataPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm mb-1">Kelembapan (%)</label>
+                  <label className="block text-sm mb-1">pH Level</label>
                   <input
                     type="number"
                     step="0.01"
-                    value={addForm.humidity}
-                    onChange={e => setAddForm({ ...(addForm as any), humidity: parseFloat(e.target.value) })}
+                    value={addForm.phlevel}
+                    onChange={e => setAddForm({ ...(addForm as any), phlevel: parseFloat(e.target.value) })}
                     className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm mb-1">Tekanan (hPa)</label>
+                  <label className="block text-sm mb-1">Amonia (ppm)</label>
                   <input
                     type="number"
                     step="0.01"
-                    value={addForm.pressure}
-                    onChange={e => setAddForm({ ...(addForm as any), pressure: parseFloat(e.target.value) })}
-                    className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">Titik Embun (°C)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={addForm.dew}
-                    onChange={e => setAddForm({ ...(addForm as any), dew: parseFloat(e.target.value) })}
-                    className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">Curah Hujan (mm)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={addForm.rainfall}
-                    onChange={e => setAddForm({ ...(addForm as any), rainfall: parseFloat(e.target.value) })}
-                    className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">Laju Hujan (mm/jam)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={addForm.rainrate}
-                    onChange={e => setAddForm({ ...(addForm as any), rainrate: parseFloat(e.target.value) })}
+                    value={addForm.ammonia}
+                    onChange={e => setAddForm({ ...(addForm as any), ammonia: parseFloat(e.target.value) })}
                     className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
                     required
                   />

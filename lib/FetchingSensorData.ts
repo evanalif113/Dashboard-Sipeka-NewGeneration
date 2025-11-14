@@ -1,33 +1,28 @@
 // lib/FetchingSensorData.ts
-import { db } from "@/lib/ConfigFirebase"; // Mengimpor instance FIRESTORE
+import { rtdb, db } from "@/lib/ConfigFirebase"; // Mengimpor instance RTDB dan Firestore
 import {
-  collection,
-  query,
-  orderBy,
-  limit,
-  getDocs,
-  deleteDoc,
-  updateDoc,
-  where,
-  Timestamp,
-  doc,
-  writeBatch,
-} from "firebase/firestore"; // Fungsi-fungsi dari Firestore SDK
+  ref,
+  query as rtdbQuery,
+  orderByChild,
+  limitToLast,
+  get,
+  remove,
+  update,
+  startAt,
+  endAt,
+} from "firebase/database";
+import { collection, query as firestoreQuery, where, getDocs } from "firebase/firestore"; // Import untuk verifikasi ke Firestore
 
-// Interface tetap sama, namun kita akan menggunakan timestamp Firestore
+// Interface disesuaikan dengan struktur data RTDB yang baru
 export interface SensorValue {
-  temperature: number;
-  humidity: number;
-  pressure: number;
-  dew: number;
-  rainfall: number;
-  rainrate: number;
-  volt: number;
+  suhu: number;
+  ph_level: number;
+  amonia: number;
+  timestamp: number; // UNIX timestamp in milliseconds
 }
 
 export interface SensorDate extends SensorValue {
-  id: string; // Document ID from Firestore
-  timestamp: number; // UNIX timestamp in milliseconds
+  id: string; // Di sini, ID adalah timestamp itu sendiri (kunci dari record)
   dateFormatted: string;
   timeFormatted: string;
 }
@@ -37,12 +32,9 @@ export interface SensorMetaData {
   TelemetryStatus: "online" | "offline";
 }
 
-// Helper untuk memformat data dari Firestore
-function formatData(doc: any): SensorDate {
-  const data = doc.data();
-  const timestampInMillis = (data.timestamp as Timestamp).toMillis();
-
-  const date = new Date(timestampInMillis);
+// Helper untuk memformat data dari RTDB
+function formatData(timestampKey: string, data: SensorValue): SensorDate {
+  const date = new Date(data.timestamp);
   const timeZone = "Asia/Jakarta";
 
   const timeFormatted = date.toLocaleTimeString("id-ID", {
@@ -61,207 +53,219 @@ function formatData(doc: any): SensorDate {
   });
 
   return {
-    id: doc.id,
-    timestamp: timestampInMillis,
-    temperature: data.temperature,
-    humidity: data.humidity,
-    pressure: data.pressure,
-    dew: data.dew,
-    volt: data.volt,
-    rainfall: data.rainfall,
-    rainrate: data.rainrate,
+    id: timestampKey, // Kunci dari record RTDB adalah timestamp
+    ...data,
     dateFormatted: `${dateFormatted} ${timeFormatted}`,
     timeFormatted: timeFormatted,
   };
 }
 
 /**
- * Mengambil data sensor dalam rentang waktu yang ditentukan dari Firestore.
- * @param sensorId - ID sensor (nama koleksi).
+ * Helper untuk memverifikasi kepemilikan perangkat di Firestore berdasarkan authToken.
+ * @param userId - ID pengguna yang meminta.
+ * @param authToken - Token autentikasi perangkat yang akan diverifikasi.
+ */
+async function verifyDeviceOwnership(userId: string, authToken: string): Promise<void> {
+  if (!userId || !authToken) {
+    throw new Error("Akses ditolak: ID Pengguna dan Token Perangkat diperlukan.");
+  }
+  const devicesRef = collection(db, "devices");
+  const q = firestoreQuery(
+    devicesRef,
+    where("userId", "==", userId),
+    where("authToken", "==", authToken)
+  );
+  const querySnapshot = await getDocs(q);
+
+  if (querySnapshot.empty) {
+    throw new Error("Akses ditolak: Perangkat tidak ditemukan atau bukan milik Anda.");
+  }
+}
+
+
+/**
+ * Mengambil data sensor dalam rentang waktu dari RTDB setelah verifikasi.
+ * @param userId - ID pengguna untuk verifikasi.
+ * @param sensorId - ID sensor (authToken).
  * @param startTimestamp - Timestamp awal dalam milidetik.
  * @param endTimestamp - Timestamp akhir dalam milidetik.
- * @returns Sebuah promise yang resolve dengan array data sensor.
  */
 export async function fetchSensorDataByDateRange(
+  userId: string,
   sensorId: string,
   startTimestamp: number,
   endTimestamp: number
 ): Promise<SensorDate[]> {
-  console.log("fetchSensorDataByDateRange (Firestore) called with:", {
-    sensorId,
-    startTimestamp,
-    endTimestamp,
-  });
-
   try {
-    const dataCollectionRef = collection(db, sensorId);
-    const q = query(
-      dataCollectionRef,
-      where("timestamp", ">=", Timestamp.fromMillis(startTimestamp)),
-      where("timestamp", "<=", Timestamp.fromMillis(endTimestamp)),
-      orderBy("timestamp", "asc") // Urutkan dari yang terlama ke terbaru
+    await verifyDeviceOwnership(userId, sensorId); // Verifikasi kepemilikan
+
+    const dataRef = ref(rtdb, `sensor/${sensorId}/data`);
+    const q = rtdbQuery(
+      dataRef,
+      orderByChild("timestamp"),
+      startAt(startTimestamp),
+      endAt(endTimestamp)
     );
 
-    const querySnapshot = await getDocs(q);
+    const snapshot = await get(q);
 
-    if (querySnapshot.empty) {
-      console.log("No sensor data found in the specified range.");
+    if (!snapshot.exists()) {
       return [];
     }
 
-    const results: SensorDate[] = querySnapshot.docs.map(formatData);
+    const results: SensorDate[] = [];
+    snapshot.forEach((childSnapshot) => {
+      const key = childSnapshot.key;
+      const val = childSnapshot.val() as SensorValue;
+      if (key) {
+        results.push(formatData(key, val));
+      }
+    });
+
     return results;
   } catch (error) {
-    console.error("Gagal mengambil data sensor dalam rentang waktu (Firestore):", error);
+    console.error("Gagal mengambil data sensor dalam rentang waktu (RTDB):", error);
     throw error;
   }
 }
 
 /**
- * Mengambil metadata dan status sensor terakhir dari Firestore.
- * @param sensorId - ID sensor (nama koleksi).
- * @returns Sebuah promise yang resolve dengan metadata sensor.
+ * Mengambil metadata dan status sensor terakhir dari RTDB setelah verifikasi.
+ * @param userId - ID pengguna untuk verifikasi.
+ * @param sensorId - ID sensor (authToken).
  */
 export async function fetchSensorMetadata(
+  userId: string,
   sensorId: string
 ): Promise<SensorMetaData> {
   try {
-    const dataCollectionRef = collection(db, sensorId);
-    const q = query(dataCollectionRef, orderBy("timestamp", "desc"), limit(1));
+    await verifyDeviceOwnership(userId, sensorId); // Verifikasi kepemilikan
 
-    const querySnapshot = await getDocs(q);
+    const dataRef = ref(rtdb, `sensor/${sensorId}/data`);
+    const q = rtdbQuery(dataRef, orderByChild("timestamp"), limitToLast(1));
+    const snapshot = await get(q);
 
-    if (querySnapshot.empty) {
-      return {
-        sensorId: sensorId,
-        TelemetryStatus: "offline",
-      };
+    if (!snapshot.exists()) {
+      return { sensorId, TelemetryStatus: "offline" };
     }
 
-    const latestDoc = querySnapshot.docs[0];
-    const latestData = latestDoc.data();
-    const latestTimestamp = (latestData.timestamp as Timestamp).toMillis();
+    let latestTimestamp = 0;
+    snapshot.forEach((child) => {
+      latestTimestamp = child.val().timestamp;
+    });
 
-    const currentTime = Date.now();
-    const timeDifference = currentTime - latestTimestamp;
+    const timeDifference = Date.now() - latestTimestamp;
     const threeMinutesInMillis = 3 * 60 * 1000;
-
     const status: "online" | "offline" =
       timeDifference < threeMinutesInMillis ? "online" : "offline";
 
-    return {
-      sensorId: sensorId,
-      TelemetryStatus: status,
-    };
+    return { sensorId, TelemetryStatus: status };
   } catch (error) {
-    console.error(`Gagal mengambil metadata untuk sensor ${sensorId} (Firestore):`, error);
+    console.error(`Gagal mengambil metadata untuk sensor ${sensorId} (RTDB):`, error);
     throw error;
   }
 }
 
 /**
- * Mengambil data sensor terakhir dari Firestore.
- * @param sensorId - ID sensor (nama koleksi).
+ * Mengambil data sensor terakhir dari RTDB setelah verifikasi.
+ * @param userId - ID pengguna untuk verifikasi.
+ * @param sensorId - ID sensor (authToken).
  * @param limitCount - Jumlah data terakhir yang akan diambil.
- * @returns Sebuah promise yang resolve dengan array data sensor.
  */
 export async function fetchSensorData(
+  userId: string,
   sensorId: string,
   limitCount: number
 ): Promise<SensorDate[]> {
-  console.log("fetchSensorData (Firestore) called with:", { sensorId, limit: limitCount });
-
   try {
-    const dataCollectionRef = collection(db, sensorId);
-    const q = query(
-      dataCollectionRef,
-      orderBy("timestamp", "desc"),
-      limit(limitCount)
-    );
+    await verifyDeviceOwnership(userId, sensorId); // Verifikasi kepemilikan
 
-    const querySnapshot = await getDocs(q);
+    const dataRef = ref(rtdb, `sensor/${sensorId}/data`);
+    const q = rtdbQuery(dataRef, orderByChild("timestamp"), limitToLast(limitCount));
+    const snapshot = await get(q);
 
-    if (querySnapshot.empty) {
-      console.log("No sensor data found.");
+    if (!snapshot.exists()) {
       return [];
     }
 
-    // Data diambil dalam urutan descending, kita balik agar menjadi ascending (kronologis)
-    const results: SensorDate[] = querySnapshot.docs.map(formatData).reverse();
-    return results;
-  } catch (error) {
-    console.error("Gagal mengambil data sensor (Firestore):", error);
-    throw error;
-  }
-}
-
-/**
- * Menghapus semua data sensor untuk sensorId tertentu di Firestore.
- * @param sensorId - ID sensor (nama koleksi).
- * @returns Sebuah promise yang akan resolve ketika data berhasil dihapus.
- */
-export async function deleteSensorData(sensorId: string): Promise<void> {
-  console.log(`deleteSensorData (Firestore) called for collection: ${sensorId}`);
-  try {
-    const dataCollectionRef = collection(db, sensorId);
-    const q = query(dataCollectionRef);
-    const querySnapshot = await getDocs(q);
-
-    if (querySnapshot.empty) {
-      console.log(`No data to delete in collection ${sensorId}.`);
-      return;
-    }
-
-    // Gunakan batch write untuk efisiensi
-    const batch = writeBatch(db);
-    querySnapshot.docs.forEach((doc) => {
-      batch.delete(doc.ref);
+    const results: SensorDate[] = [];
+    snapshot.forEach((childSnapshot) => {
+      const key = childSnapshot.key;
+      const val = childSnapshot.val() as SensorValue;
+      if (key) {
+        results.push(formatData(key, val));
+      }
     });
 
-    await batch.commit();
-    console.log(`Successfully deleted all data in collection ${sensorId}`);
+    return results;
   } catch (error) {
-    console.error(`Gagal menghapus data di koleksi ${sensorId} (Firestore):`, error);
+    console.error("Gagal mengambil data sensor (RTDB):", error);
     throw error;
   }
 }
 
 /**
- * Mengedit data sensor berdasarkan ID dokumen di Firestore.
- * @param sensorId - ID sensor (nama koleksi).
- * @param docId - ID dokumen di Firestore.
+ * Menghapus semua data untuk sensorId tertentu di RTDB setelah verifikasi.
+ * @param userId - ID pengguna untuk verifikasi.
+ * @param sensorId - ID sensor (authToken).
+ */
+export async function deleteSensorData(userId: string, sensorId: string): Promise<void> {
+  try {
+    await verifyDeviceOwnership(userId, sensorId); // Verifikasi kepemilikan
+
+    const dataRef = ref(rtdb, `sensor/${sensorId}/data`);
+    await remove(dataRef);
+    console.log(`Successfully deleted all data for sensor ${sensorId}`);
+  } catch (error) {
+    console.error(`Gagal menghapus data untuk sensor ${sensorId} (RTDB):`, error);
+    throw error;
+  }
+}
+
+/**
+ * Mengedit data sensor berdasarkan timestamp di RTDB setelah verifikasi.
+ * @param userId - ID pengguna untuk verifikasi.
+ * @param sensorId - ID sensor (authToken).
+ * @param timestampKey - Kunci timestamp dari record yang akan diedit.
  * @param newData - Data baru yang akan diupdate.
  */
-export async function editSensorDataByDocId(
+export async function editSensorDataByTimestamp(
+  userId: string,
   sensorId: string,
-  docId: string,
-  newData: Partial<SensorValue>
+  timestampKey: string,
+  newData: Partial<Omit<SensorValue, "timestamp">>
 ): Promise<void> {
-  const docRef = doc(db, sensorId, docId);
   try {
-    await updateDoc(docRef, newData);
-    console.log(`Data sensor dengan docId ${docId} berhasil diupdate.`);
+    await verifyDeviceOwnership(userId, sensorId); // Verifikasi kepemilikan
+
+    const docRef = ref(rtdb, `sensor/${sensorId}/data/${timestampKey}`);
+    await update(docRef, newData);
+    console.log(`Data sensor dengan kunci ${timestampKey} berhasil diupdate.`);
   } catch (error) {
-    console.error(`Gagal mengedit data sensor dengan docId ${docId}:`, error);
+    console.error(`Gagal mengedit data sensor dengan kunci ${timestampKey}:`, error);
     throw error;
   }
 }
 
 /**
- * Menghapus data sensor berdasarkan ID dokumen di Firestore.
- * @param sensorId - ID sensor (nama koleksi).
- * @param docId - ID dokumen di Firestore.
+ * Menghapus data sensor berdasarkan timestamp di RTDB setelah verifikasi.
+ * @param userId - ID pengguna untuk verifikasi.
+ * @param sensorId - ID sensor (authToken).
+ * @param timestampKey - Kunci timestamp dari record yang akan dihapus.
  */
-export async function deleteSensorDataByDocId(
+export async function deleteSensorDataByTimestamp(
+  userId: string,
   sensorId: string,
-  docId: string
+  timestampKey: string
 ): Promise<void> {
-  const docRef = doc(db, sensorId, docId);
   try {
-    await deleteDoc(docRef);
-    console.log(`Data sensor dengan docId ${docId} berhasil dihapus.`);
+    await verifyDeviceOwnership(userId, sensorId); // Verifikasi kepemilikan
+
+    const docRef = ref(rtdb, `sensor/${sensorId}/data/${timestampKey}`);
+    await remove(docRef);
+    console.log(`Data sensor dengan kunci ${timestampKey} berhasil dihapus.`);
   } catch (error) {
-    console.error(`Gagal menghapus data sensor dengan docId ${docId}:`, error);
+    console.error(`Gagal menghapus data sensor dengan kunci ${timestampKey}:`, error);
     throw error;
   }
 }

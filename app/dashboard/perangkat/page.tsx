@@ -414,7 +414,9 @@ export default function PerangkatPage() {
         (fetched as Device[]).map(async (device) => {
           let TelemetryStatus: "online" | "offline" = "offline"
           try {
-            const meta = await fetchSensorMetadata(device.id)
+            // Gunakan authToken sebagai ID untuk mengambil data sensor. Fallback ke ID jika tidak ada.
+            const sensorToken = device.authToken || device.id
+            const meta = await fetchSensorMetadata(uid, sensorToken)
             TelemetryStatus = meta.TelemetryStatus
           } catch {
             TelemetryStatus = "offline"

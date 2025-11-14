@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -9,16 +9,11 @@ import {
   ThermometerIcon,
   DropletsIcon,
   WavesIcon,
-  EyeIcon,
-  TrendingUpIcon,
-  TrendingDownIcon,
-  MinusIcon,
   AlertTriangleIcon,
   CheckCircleIcon,
   RadioIcon,
   WifiIcon,
   WifiOffIcon,
-  BatteryIcon,
   RefreshCwIcon,
   GaugeIcon,
   CalendarIcon,
@@ -27,97 +22,87 @@ import {
 import { EmptyState } from "@/components/empty-state"
 import { useAuth } from "@/hooks/useAuth"
 import Loading from "../loading"
+import { fetchAllDevices, Device } from "@/lib/FetchingDevice"
+import { fetchSensorMetadata, fetchSensorData, SensorDate } from "@/lib/FetchingSensorData"
+import { fetchRecentAlerts, LogEvent } from "@/lib/FetchingLogs"
 
-// Dummy data for water quality monitoring
-const dummyDevices = [
-  {
-    id: "1",
-    name: "Stasiun Sungai Serayu",
-    location: "Banyumas",
-    status: "online",
-    waterTemperature: 26.5,
-    ph: 7.2,
-    turbidity: 25, // NTU
-    tds: 150, // ppm
-    batteryLevel: 85,
-    lastUpdate: new Date().toISOString(),
-  },
-  {
-    id: "2",
-    name: "Pos Pantau Waduk Sempor",
-    location: "Gombong",
-    status: "offline",
-    waterTemperature: 25.1,
-    ph: 6.8,
-    turbidity: 45,
-    tds: 210,
-    batteryLevel: 25,
-    lastUpdate: new Date(Date.now() - 3600 * 1000).toISOString(),
-  },
-  {
-    id: "3",
-    name: "Titik Ukur Irigasi",
-    location: "Adimulyo",
-    status: "online",
-    waterTemperature: 27.2,
-    ph: 7.5,
-    turbidity: 15,
-    tds: 120,
-    batteryLevel: 60,
-    lastUpdate: new Date(Date.now() - 1800 * 1000).toISOString(),
-  },
-  {
-    id: "4",
-    name: "Stasiun Riset Tambak",
-    location: "Puring",
-    status: "online",
-    waterTemperature: 28.1,
-    ph: 8.1,
-    turbidity: 10,
-    tds: 500,
-    batteryLevel: 70,
-    lastUpdate: new Date(Date.now() - 600 * 1000).toISOString(),
-  },
-]
-const dummyDeviceStats = {
-  totalDevices: 4,
-  onlineDevices: 3,
-  alertDevices: 1,
-  avgBatteryLevel: 60,
+interface DeviceWithStatus extends Device {
+  status: "online" | "offline"
+  latestData?: SensorDate
 }
-const dummyRecentAlerts = [
-  {
-    id: "a1",
-    message: "Kekeruhan tinggi terdeteksi di Waduk Sempor!",
-    timestamp: new Date().toISOString(),
-    device: "Pos Pantau Waduk Sempor",
-    severity: "tinggi",
-  },
-]
-const dummyWaterQualityStats = {
-  averageTemperature: 26.7,
-  averagePh: 7.4,
-  activeAlerts: 1,
-  anomalies: 2,
+
+interface DeviceStats {
+  totalDevices: number
+  onlineDevices: number
 }
 
 export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth()
   const router = useRouter()
 
-  // Dummy state
-  const [devices, setDevices] = useState(dummyDevices)
-  const [deviceStats, setDeviceStats] = useState(dummyDeviceStats)
-  const [recentAlerts, setRecentAlerts] = useState(dummyRecentAlerts)
-  const [waterQualityStats, setWaterQualityStats] = useState(dummyWaterQualityStats)
+  const [devices, setDevices] = useState<DeviceWithStatus[]>([])
+  const [deviceStats, setDeviceStats] = useState<DeviceStats>({
+    totalDevices: 0,
+    onlineDevices: 0,
+  })
+  const [recentAlerts, setRecentAlerts] = useState<LogEvent[]>([])
   const [refreshing, setRefreshing] = useState(false)
   const [currentDateTime, setCurrentDateTime] = useState(new Date())
+
+  const loadDashboardData = useCallback(async () => {
+    if (!user?.uid) return
+    setRefreshing(true)
+
+    try {
+      // Fetch all registered devices for the user
+      const userDevices = await fetchAllDevices(user.uid)
+
+      // Fetch status and latest data for each device in parallel
+      const devicesWithDetails = await Promise.all(
+        userDevices.map(async (device) => {
+          // Gunakan authToken sebagai ID untuk mengambil data sensor. Fallback ke ID jika tidak ada.
+          const sensorToken = device.authToken || device.id;
+          const [metadata, latestDataArr] = await Promise.all([
+            fetchSensorMetadata(user.uid, sensorToken),
+            fetchSensorData(user.uid, sensorToken, 1),
+          ])
+          return {
+            ...device,
+            status: metadata.TelemetryStatus,
+            latestData: latestDataArr.length > 0 ? latestDataArr[0] : undefined,
+          }
+        })
+      )
+
+      // Fetch recent alerts
+      const alerts = await fetchRecentAlerts(user.uid, 5)
+      setRecentAlerts(alerts)
+
+      // Update state with fetched data
+      setDevices(devicesWithDetails)
+
+      // Calculate stats
+      const onlineCount = devicesWithDetails.filter((d) => d.status === "online").length
+
+      setDeviceStats({
+        totalDevices: userDevices.length,
+        onlineDevices: onlineCount,
+      })
+    } catch (error) {
+      console.error("Failed to load dashboard data:", error)
+      // Optionally set an error state to show in the UI
+    } finally {
+      setRefreshing(false)
+    }
+  }, [user?.uid])
 
   useEffect(() => {
     if (!authLoading && !user) {
       router.replace("/login")
+    } else if (user) {
+      loadDashboardData()
     }
-  }, [user, authLoading, router])
+  }, [user, authLoading, router, loadDashboardData])
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -126,67 +111,19 @@ export default function DashboardPage() {
     return () => clearInterval(timer)
   }, [])
 
-  const handleRefresh = async () => {
-    setRefreshing(true)
-    // Simulate fetching new data
-    setTimeout(() => {
-      // Create new dummy data to simulate an update
-      const newDummyDevices = devices.map((device) => ({
-        ...device,
-        waterTemperature: device.waterTemperature + (Math.random() - 0.5) * 1,
-        ph: device.ph + (Math.random() - 0.5) * 0.2,
-        turbidity: Math.max(5, device.turbidity + (Math.random() - 0.5) * 5),
-        tds: Math.max(100, device.tds + (Math.random() - 0.5) * 20),
-        batteryLevel: Math.max(0, Math.min(100, device.batteryLevel - Math.floor(Math.random() * 5))),
-        lastUpdate: new Date().toISOString(),
-      }))
-
-      const onlineCount = newDummyDevices.filter((d) => d.status === "online").length
-      const newDeviceStats = {
-        totalDevices: newDummyDevices.length,
-        onlineDevices: onlineCount,
-        alertDevices: Math.floor(Math.random() * 3),
-        avgBatteryLevel: Math.round(
-          newDummyDevices.reduce((acc, d) => acc + d.batteryLevel, 0) / newDummyDevices.length
-        ),
-      }
-
-      const newWaterQualityStats = {
-        averageTemperature: 26.7 + (Math.random() - 0.5) * 2,
-        averagePh: 7.4 + (Math.random() - 0.5) * 0.5,
-        activeAlerts: 1 + Math.floor(Math.random() * 2),
-        anomalies: Math.floor(Math.random() * 3),
-      }
-
-      // Update state with new data
-      setDevices(newDummyDevices)
-      setDeviceStats(newDeviceStats)
-      setWaterQualityStats(newWaterQualityStats)
-
-      setRefreshing(false)
-    }, 1000)
-  }
-
-  const getTrendIcon = (trend: string, size = "h-4 w-4") => {
-    switch (trend) {
-      case "up":
-        return <TrendingUpIcon className={`${size} text-green-600`} />
-      case "down":
-        return <TrendingDownIcon className={`${size} text-red-600`} />
-      default:
-        return <MinusIcon className={`${size} text-gray-600`} />
-    }
+  const handleRefresh = () => {
+    loadDashboardData()
   }
 
   const getStatusColor = (status: string) => {
     return status === "online" ? "text-green-500 dark:text-green-400" : "text-red-500 dark:text-red-400"
   }
 
-  if (authLoading || !user) {
+  if (authLoading || (!user && !authLoading)) {
     return <Loading />
   }
 
-  if (!authLoading && user && (!devices || devices.length === 0)) {
+  if (!authLoading && user && devices.length === 0 && !refreshing) {
     return <EmptyState type="dashboard" />
   }
 
@@ -242,7 +179,7 @@ export default function DashboardPage() {
             <RadioIcon className="h-4 w-4 text-blue-600 dark:text-blue-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-900 dark:text-blue-200">{deviceStats?.totalDevices || 0}</div>
+            <div className="text-2xl font-bold text-blue-900 dark:text-blue-200">{deviceStats.totalDevices}</div>
             <p className="text-xs text-blue-600 dark:text-blue-400">Stasiun terhubung</p>
           </CardContent>
         </Card>
@@ -253,7 +190,7 @@ export default function DashboardPage() {
             <WifiIcon className="h-4 w-4 text-green-600 dark:text-green-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-900 dark:text-green-200">{deviceStats?.onlineDevices || 0}</div>
+            <div className="text-2xl font-bold text-green-900 dark:text-green-200">{deviceStats.onlineDevices}</div>
             <p className="text-xs text-green-600 dark:text-green-400">Aktif sekarang</p>
           </CardContent>
         </Card>
@@ -292,10 +229,10 @@ export default function DashboardPage() {
                         Online
                       </Badge>
                       <div className="text-right">
-                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200">{device.ph.toFixed(1)} pH</div>
+                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200">{device.latestData?.ph_level.toFixed(1) ?? "N/A"} pH</div>
                         <div className="flex items-center text-gray-600 dark:text-gray-400">
                           <WavesIcon className="h-3 w-3" />
-                          <span className="text-xs ml-1">Keasaman</span>
+                          <span className="text-xs ml-1">pH Level</span>
                         </div>
                       </div>
                     </div>
@@ -330,7 +267,7 @@ export default function DashboardPage() {
                   <div className="flex-1">
                     <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{alert.message}</p>
                     <p className="text-xs text-gray-600 dark:text-gray-400">
-                      {new Date(alert.timestamp).toLocaleString()} • {alert.device}
+                      {new Date(alert.timestamp).toLocaleString("id-ID")} • {alert.device}
                     </p>
                   </div>
                   <Badge variant="destructive" className="text-xs">
@@ -368,32 +305,20 @@ export default function DashboardPage() {
                 </div>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">Suhu Air:</span>
-                    <span className="font-medium text-gray-800 dark:text-gray-200">{device.waterTemperature.toFixed(1)}°C</span>
+                    <span className="text-gray-600 dark:text-gray-400">Suhu:</span>
+                    <span className="font-medium text-gray-800 dark:text-gray-200">{device.latestData?.suhu.toFixed(1) ?? "N/A"}°C</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">pH:</span>
-                    <span className="font-medium text-gray-800 dark:text-gray-200">{device.ph.toFixed(1)}</span>
+                    <span className="text-gray-600 dark:text-gray-400">pH Level:</span>
+                    <span className="font-medium text-gray-800 dark:text-gray-200">{device.latestData?.ph_level.toFixed(1) ?? "N/A"}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">Kekeruhan:</span>
-                    <span className="font-medium text-gray-800 dark:text-gray-200">{device.turbidity.toFixed(0)} NTU</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">TDS:</span>
-                    <span className="font-medium text-gray-800 dark:text-gray-200">{device.tds.toFixed(0)} ppm</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">Baterai:</span>
-                    <span
-                      className={`font-medium ${device.batteryLevel < 30 ? "text-red-500 dark:text-red-400" : "text-green-500 dark:text-green-400"}`}
-                    >
-                      {device.batteryLevel}%
-                    </span>
+                    <span className="text-gray-600 dark:text-gray-400">Amonia:</span>
+                    <span className="font-medium text-gray-800 dark:text-gray-200">{device.latestData?.amonia.toFixed(2) ?? "N/A"} ppm</span>
                   </div>
                   <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400 pt-1 border-t border-gray-200 dark:border-gray-600 mt-2">
                     <span>Update terakhir:</span>
-                    <span>{new Date(device.lastUpdate).toLocaleTimeString()}</span>
+                    <span>{device.latestData?.timeFormatted ?? "N/A"}</span>
                   </div>
                 </div>
               </div>
