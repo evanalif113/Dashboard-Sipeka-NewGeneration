@@ -69,8 +69,10 @@ interface WeatherData {
   amonia: number;
 }
 
-// Daftar periode yang bisa dipilih
+// Daftar periode yang bisa dipilih, ditambahkan interval lebih pendek
 const periods: Period[] = [
+  { label: "1 Menit", valueInMinutes: 1 },
+  { label: "5 Menit", valueInMinutes: 5 },
   { label: "30 Menit", valueInMinutes: 30 },
   { label: "1 Jam", valueInMinutes: 60 },
   { label: "3 Jam", valueInMinutes: 3 * 60 },
@@ -117,9 +119,9 @@ export default function DataPage() {
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addForm, setAddForm] = useState<{
     datetime: string;
-    temperature: number;
-    phlevel: number;
-    ammonia: number;
+    suhu: number;
+    ph_level: number;
+    amonia: number;
   } | null>(null);
 
   // Fetch devices for the sensor dropdown
@@ -250,14 +252,24 @@ export default function DataPage() {
     if (sensorId) {
       fetchData(); // Panggil untuk pemuatan awal
 
-      // Atur interval untuk polling, hanya jika periode tertentu dipilih
-      if (selectedPeriod.valueInMinutes <= 60 && !dateRange) {
-        // Contoh: polling untuk periode 1 jam atau kurang, dan tidak ada date range aktif
-        const interval = setInterval(updateData, 60000); // Panggil updateData untuk polling
+      // Atur interval polling dinamis berdasarkan periode yang dipilih
+      if (!dateRange) {
+        let pollInterval: number;
+        if (selectedPeriod.valueInMinutes <= 1) {
+          pollInterval = 5000; // 5 detik untuk periode 1 menit
+        } else if (selectedPeriod.valueInMinutes <= 5) {
+          pollInterval = 15000; // 15 detik untuk periode 5 menit
+        } else if (selectedPeriod.valueInMinutes <= 60) {
+          pollInterval = 60000; // 1 menit untuk periode hingga 1 jam
+        } else {
+          return; // Jangan polling untuk periode yang lebih lama
+        }
+
+        const interval = setInterval(updateData, pollInterval);
         return () => clearInterval(interval);
       }
     }
-  }, [sensorId, fetchData, updateData, selectedPeriod.valueInMinutes, dateRange]);
+  }, [sensorId, fetchData, updateData, selectedPeriod, dateRange]);
 
   // Deteksi mode dark dari Tailwind (class 'dark' pada html)
   useEffect(() => {
@@ -319,9 +331,9 @@ export default function DataPage() {
     const localISO = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     setAddForm({
       datetime: localISO,
-      temperature: 0,
-      phlevel: 0,
-      ammonia: 0,
+      suhu: 0,
+      ph_level: 0,
+      amonia: 0,
     });
     setAddModalOpen(true);
   };
@@ -426,7 +438,10 @@ export default function DataPage() {
     }
     const headers = ["Waktu", "Suhu (°C)", "pH Level", "Amonia (ppm)"];
     const rows = weatherData.map(entry =>
-      `${entry.date},${fmt2(entry.suhu)},${fmt2(entry.ph_level)},${fmt2(entry.amonia)}`
+      `${entry.date},
+      ${fmt2(entry.suhu)},
+      ${fmt2(entry.ph_level)},
+      ${fmt2(entry.amonia)}`
     );
     const csvContent = [headers.join(","), ...rows].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -830,8 +845,8 @@ export default function DataPage() {
                   <input
                     type="number"
                     step="0.01"
-                    value={addForm.temperature}
-                    onChange={e => setAddForm({ ...(addForm as any), temperature: parseFloat(e.target.value) })}
+                    value={addForm.suhu}
+                    onChange={e => setAddForm({ ...(addForm as any), suhu: parseFloat(e.target.value) })}
                     className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
                     required
                   />
@@ -841,8 +856,8 @@ export default function DataPage() {
                   <input
                     type="number"
                     step="0.01"
-                    value={addForm.phlevel}
-                    onChange={e => setAddForm({ ...(addForm as any), phlevel: parseFloat(e.target.value) })}
+                    value={addForm.ph_level}
+                    onChange={e => setAddForm({ ...(addForm as any), ph_level: parseFloat(e.target.value) })}
                     className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
                     required
                   />
@@ -852,8 +867,8 @@ export default function DataPage() {
                   <input
                     type="number"
                     step="0.01"
-                    value={addForm.ammonia}
-                    onChange={e => setAddForm({ ...(addForm as any), ammonia: parseFloat(e.target.value) })}
+                    value={addForm.amonia}
+                    onChange={e => setAddForm({ ...(addForm as any), amonia: parseFloat(e.target.value) })}
                     className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
                     required
                   />
