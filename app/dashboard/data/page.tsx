@@ -43,6 +43,7 @@ import {
   deleteSensorData,
   editSensorDataByTimestamp,
   deleteSensorDataByTimestamp,
+  addSensorData, // Import fungsi baru
   SensorDate,
   SensorValue,
 } from "@/lib/FetchingSensorData";
@@ -60,7 +61,7 @@ interface Period {
   valueInMinutes: number;
 }
 // Define the structure for table data
-interface WeatherData {
+interface WaterData {
   id: string; // Kunci dari RTDB (timestamp)
   timestamp: number;
   date: string;
@@ -90,23 +91,23 @@ export default function DataPage() {
   const [ammoniaLevels, setAmmoniaLevels] = useState<number[]>([]);
 
   // State untuk data tabel
-  const [weatherData, setWeatherData] = useState<WeatherData[]>([]);
+  const [waterData, setWaterData] = useState<WaterData[]>([]);
 
   // UI state
   const [loading, setLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // State untuk tab
-  const [activeTab, setActiveTab] = useState<'table' | 'grafik'> ('table');
+  const [activeTab, setActiveTab] = useState<'table' | 'grafik' | 'log'> ('table');
 
   // State untuk pagination
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15; // Jumlah item per halaman
 
-  // State untuk sensor dan jumlah data
+  // State untuk sensor dan jumlah data (Mengambil data dinamis dari Firestore)
   const [sensorOptions, setSensorOptions] = useState<{ label: string; value: string }[]>([]);
   const [sensorId, setSensorId] = useState("");
-  const [selectedPeriod, setSelectedPeriod] = useState<Period>(periods[1]); // Default 1 Jam
+  const [selectedPeriod, setSelectedPeriod] = useState<Period>(periods[1]); // Default 5 Menit
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
 
   // State untuk mode dark
@@ -114,7 +115,7 @@ export default function DataPage() {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [editForm, setEditForm] = useState<WeatherData | null>(null);
+  const [editForm, setEditForm] = useState<WaterData | null>(null);
   const [deleteRowIndex, setDeleteRowIndex] = useState<number | null>(null);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addForm, setAddForm] = useState<{
@@ -124,7 +125,8 @@ export default function DataPage() {
     amonia: number;
   } | null>(null);
 
-  // Fetch devices for the sensor dropdown
+  
+  // --- LOGIKA FETCH DEVICE DINAMIS ---
   useEffect(() => {
     const loadDevices = async () => {
       if (user?.uid) {
@@ -134,11 +136,9 @@ export default function DataPage() {
           if (devices && devices.length > 0) {
             const options = devices.map((device) => ({
               label: device.name,
-              // Gunakan authToken sebagai value, fallback ke id jika tidak ada
               value: device.authToken || device.id,
             }));
             setSensorOptions(options);
-            // Set the first device's token as the default selected sensor
             if (!sensorId && options.length > 0) {
               setSensorId(options[0].value);
             }
@@ -150,13 +150,14 @@ export default function DataPage() {
           console.error("Failed to fetch devices:", err);
           setError("Gagal memuat daftar perangkat.");
         } finally {
-          setLoading(false);
+          // Loading di-set ke false di dalam fetchData()
         }
       }
     };
 
     loadDevices();
-  }, [user, sensorId]);
+  }, [user]); // Hanya bergantung pada user untuk memuat daftar perangkat
+  
 
   // Fungsi untuk memproses dan mengatur state data
   const processAndSetData = (data: SensorDate[]) => {
@@ -171,7 +172,7 @@ export default function DataPage() {
       setPhLevels(fetchedPhLevels);
       setAmmoniaLevels(fetchedAmmoniaLevels);
 
-      const dataArray: WeatherData[] = data.map((entry) => ({
+      const dataArray: WaterData[] = data.map((entry) => ({
         id: entry.id, // Simpan kunci RTDB
         timestamp: entry.timestamp,
         date: entry.dateFormatted || new Date(entry.timestamp).toLocaleString('id-ID', { timeZone: "Asia/Jakarta" }),
@@ -179,7 +180,7 @@ export default function DataPage() {
         ph_level: entry.ph_level,
         amonia: entry.amonia,
       }));
-      setWeatherData(dataArray.reverse());
+      setWaterData(dataArray.reverse());
       setError(null);
       setCurrentPage(1); // Reset ke halaman pertama saat data baru dimuat
     } else {
@@ -187,7 +188,7 @@ export default function DataPage() {
       setTemperatures([]);
       setPhLevels([]);
       setAmmoniaLevels([]);
-      setWeatherData([]);
+      setWaterData([]);
       setError("Tidak ada data yang tersedia untuk periode ini.");
     }
   };
@@ -237,7 +238,7 @@ export default function DataPage() {
         "Gagal mengambil data: " +
           (err.message || "Terjadi kesalahan tidak diketahui.")
       );
-      setWeatherData([]);
+      setWaterData([]);
       setTimestamps([]);
       setTemperatures([]);
       setPhLevels([]);
@@ -303,7 +304,7 @@ export default function DataPage() {
       try {
         await deleteSensorData(user.uid, sensorId);
         // Kosongkan state di UI setelah berhasil
-        setWeatherData([]);
+        setWaterData([]);
         setTimestamps([]);
         setTemperatures([]);
         setPhLevels([]);
@@ -319,7 +320,7 @@ export default function DataPage() {
   };
 
   // Fungsi untuk membuka modal edit
-  const openEditModal = (row: WeatherData, index: number) => {
+  const openEditModal = (row: WaterData, index: number) => {
     setEditingIndex(index);
     setEditForm({ ...row });
     setEditModalOpen(true);
@@ -348,12 +349,12 @@ export default function DataPage() {
         ph_level: editForm.ph_level,
         amonia: editForm.amonia,
       });
-      const updatedData = [...weatherData];
-      const targetIndex = weatherData.findIndex(item => item.id === editForm.id);
+      const updatedData = [...waterData];
+      const targetIndex = waterData.findIndex(item => item.id === editForm.id);
       if (targetIndex !== -1) {
         // Perbarui baris yang sesuai di state lokal
         updatedData[targetIndex] = { ...editForm };
-        setWeatherData(updatedData);
+        setWaterData(updatedData);
       }
       setEditModalOpen(false);
       setEditingIndex(null);
@@ -365,22 +366,26 @@ export default function DataPage() {
 
 // add: simpan data baru
   const handleAddSave = async () => {
-    if (!addForm) return;
+    if (!addForm || !user?.uid || !sensorId) return;
     const ts = new Date(addForm.datetime).getTime();
     if (Number.isNaN(ts)) {
       alert("Tanggal/Waktu tidak valid.");
       return;
     }
     try {
-      // Fungsi add data belum ada di FetchingSensorData.ts, ini akan error
-      // Anda perlu membuat fungsi addSensorData di FetchingSensorData.ts
-      // Untuk sementara, ini akan gagal.
-      console.error("Fungsi untuk menambah data baru belum diimplementasikan.");
-      alert("Fungsi untuk menambah data baru belum diimplementasikan.");
-      // await addSensorData(sensorId, ts, { ... });
+      const newData: SensorValue = {
+        timestamp: ts,
+        suhu: addForm.suhu,
+        ph_level: addForm.ph_level,
+        amonia: addForm.amonia,
+      };
+
+      // Panggil fungsi addSensorData yang sudah dibuat
+      await addSensorData(user.uid, sensorId, newData);
+
       setAddModalOpen(false);
       setAddForm(null);
-      await fetchData();
+      await fetchData(); // Muat ulang data untuk menampilkan data baru
     } catch (err: any) {
       alert("Gagal menambahkan data: " + (err.message || "Terjadi kesalahan."));
     }
@@ -403,8 +408,8 @@ export default function DataPage() {
       // Gunakan deleteSensorDataByTimestamp dengan kunci RTDB (rowToDelete.id)
       await deleteSensorDataByTimestamp(user.uid, sensorId, rowToDelete.id);
       // Hapus dari state utama (weatherData) berdasarkan ID
-      const updatedData = weatherData.filter((item) => item.id !== rowToDelete.id);
-      setWeatherData(updatedData);
+      const updatedData = waterData.filter((item) => item.id !== rowToDelete.id);
+      setWaterData(updatedData);
       setDeleteModalOpen(false);
       setDeleteRowIndex(null);
     } catch (err: any) {
@@ -413,10 +418,10 @@ export default function DataPage() {
   };
 
   // Pagination logic
-  const totalPages = Math.ceil(weatherData.length / itemsPerPage);
+  const totalPages = Math.ceil(waterData.length / itemsPerPage);
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentTableData = weatherData.slice(indexOfFirstItem, indexOfLastItem);
+  const currentTableData = waterData.slice(indexOfFirstItem, indexOfLastItem);
 
   const handleNextPage = () => {
     if (currentPage < totalPages) {
@@ -432,12 +437,12 @@ export default function DataPage() {
 
   // Fungsi untuk mengunduh data (contoh sederhana)
   const handleDownloadData = () => {
-    if (weatherData.length === 0) {
+    if (waterData.length === 0) {
       alert("Tidak ada data untuk diunduh.");
       return;
     }
     const headers = ["Waktu", "Suhu (°C)", "pH Level", "Amonia (ppm)"];
-    const rows = weatherData.map(entry =>
+    const rows = waterData.map(entry =>
       `${entry.date},
       ${fmt2(entry.suhu)},
       ${fmt2(entry.ph_level)},
@@ -689,6 +694,16 @@ export default function DataPage() {
         >
           Grafik
         </button>
+        <button
+          className={`py-2 px-4 text-sm font-medium ${
+            activeTab === 'log'
+              ? 'border-b-2 border-primary-500 text-primary-600 dark:text-primary-400'
+              : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+          }`}
+          onClick={() => setActiveTab('log')}
+        >
+          Log
+        </button>
       </div>
 
       {/* Tab Content */}
@@ -750,6 +765,20 @@ export default function DataPage() {
               <ChartCard title="Amonia" data={ammoniaLevels} color={chartColors.ammonia} Icon={Wind} />
             </div>
           )}
+
+          {/* Raw Data Log Content */}
+          {activeTab === 'log' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Raw Data Log</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <pre className="p-4 bg-gray-100 dark:bg-gray-800 rounded-md text-sm overflow-x-auto">
+                  {JSON.stringify(waterData, null, 2)}
+                </pre>
+              </CardContent>
+            </Card>
+          )}
         </>
       )}
 
@@ -774,7 +803,7 @@ export default function DataPage() {
                     type="number"
                     step="0.01"
                     value={editForm.suhu}
-                    onChange={e => setEditForm({ ...editForm, suhu: parseFloat(e.target.value) })}
+                    onChange={e => setEditForm({ ...editForm, suhu: parseFloat(e.target.value) || 0 })}
                     className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
                     required
                   />
@@ -785,7 +814,7 @@ export default function DataPage() {
                     type="number"
                     step="0.01"
                     value={editForm.ph_level}
-                    onChange={e => setEditForm({ ...editForm, ph_level: parseFloat(e.target.value) })}
+                    onChange={e => setEditForm({ ...editForm, ph_level: parseFloat(e.target.value) || 0 })}
                     className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
                     required
                   />
@@ -796,7 +825,7 @@ export default function DataPage() {
                     type="number"
                     step="0.01"
                     value={editForm.amonia}
-                    onChange={e => setEditForm({ ...editForm, amonia: parseFloat(e.target.value) })}
+                    onChange={e => setEditForm({ ...editForm, amonia: parseFloat(e.target.value) || 0 })}
                     className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
                     required
                   />
@@ -846,7 +875,7 @@ export default function DataPage() {
                     type="number"
                     step="0.01"
                     value={addForm.suhu}
-                    onChange={e => setAddForm({ ...(addForm as any), suhu: parseFloat(e.target.value) })}
+                    onChange={e => setAddForm({ ...(addForm as any), suhu: parseFloat(e.target.value) || 0 })}
                     className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
                     required
                   />
@@ -857,7 +886,7 @@ export default function DataPage() {
                     type="number"
                     step="0.01"
                     value={addForm.ph_level}
-                    onChange={e => setAddForm({ ...(addForm as any), ph_level: parseFloat(e.target.value) })}
+                    onChange={e => setAddForm({ ...(addForm as any), ph_level: parseFloat(e.target.value) || 0 })}
                     className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
                     required
                   />
@@ -868,7 +897,7 @@ export default function DataPage() {
                     type="number"
                     step="0.01"
                     value={addForm.amonia}
-                    onChange={e => setAddForm({ ...(addForm as any), amonia: parseFloat(e.target.value) })}
+                    onChange={e => setAddForm({ ...(addForm as any), amonia: parseFloat(e.target.value) || 0 })}
                     className={`w-full px-3 py-2 rounded border ${isDarkMode ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 border-gray-300"}`}
                     required
                   />

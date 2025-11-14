@@ -10,6 +10,7 @@ import {
   update,
   startAt,
   endAt,
+  set, // Import 'set' untuk menambah data baru
 } from "firebase/database";
 import { collection, query as firestoreQuery, where, getDocs } from "firebase/firestore"; // Import untuk verifikasi ke Firestore
 
@@ -34,7 +35,8 @@ export interface SensorMetaData {
 
 // Helper untuk memformat data dari RTDB
 function formatData(timestampKey: string, data: SensorValue): SensorDate {
-  const date = new Date(data.timestamp);
+  // PERBAIKAN: Kalikan dengan 1000 untuk mengubah detik menjadi milidetik
+  const date = new Date(data.timestamp * 1000);
   const timeZone = "Asia/Jakarta";
 
   const timeFormatted = date.toLocaleTimeString("id-ID", {
@@ -99,7 +101,7 @@ export async function fetchSensorDataByDateRange(
   try {
     await verifyDeviceOwnership(userId, sensorId); // Verifikasi kepemilikan
 
-    const dataRef = ref(rtdb, `sensor/${sensorId}/data`);
+    const dataRef = ref(rtdb, `sensor/${sensorId}/data`); // PERBAIKAN: Tambahkan /data
     const q = rtdbQuery(
       dataRef,
       orderByChild("timestamp"),
@@ -141,7 +143,7 @@ export async function fetchSensorMetadata(
   try {
     await verifyDeviceOwnership(userId, sensorId); // Verifikasi kepemilikan
 
-    const dataRef = ref(rtdb, `sensor/${sensorId}/data`);
+    const dataRef = ref(rtdb, `sensor/${sensorId}/data`); // PERBAIKAN: Tambahkan /data
     const q = rtdbQuery(dataRef, orderByChild("timestamp"), limitToLast(1));
     const snapshot = await get(q);
 
@@ -149,12 +151,13 @@ export async function fetchSensorMetadata(
       return { sensorId, TelemetryStatus: "offline" };
     }
 
-    let latestTimestamp = 0;
+    let latestTimestampInSeconds = 0;
     snapshot.forEach((child) => {
-      latestTimestamp = child.val().timestamp;
+      latestTimestampInSeconds = child.val().timestamp;
     });
 
-    const timeDifference = Date.now() - latestTimestamp;
+    // PERBAIKAN: Ubah timestamp dari detik ke milidetik sebelum membandingkan dengan Date.now()
+    const timeDifference = Date.now() - (latestTimestampInSeconds * 1000);
     const threeMinutesInMillis = 3 * 60 * 1000;
     const status: "online" | "offline" =
       timeDifference < threeMinutesInMillis ? "online" : "offline";
@@ -180,7 +183,7 @@ export async function fetchSensorData(
   try {
     await verifyDeviceOwnership(userId, sensorId); // Verifikasi kepemilikan
 
-    const dataRef = ref(rtdb, `sensor/${sensorId}/data`);
+    const dataRef = ref(rtdb, `sensor/${sensorId}/data`); // PERBAIKAN: Tambahkan /data
     const q = rtdbQuery(dataRef, orderByChild("timestamp"), limitToLast(limitCount));
     const snapshot = await get(q);
 
@@ -205,6 +208,33 @@ export async function fetchSensorData(
 }
 
 /**
+ * Menambah data sensor baru ke RTDB setelah verifikasi.
+ * @param userId - ID pengguna untuk verifikasi.
+ * @param sensorId - ID sensor (authToken).
+ * @param newData - Objek data sensor baru yang sesuai dengan SensorValue.
+ */
+export async function addSensorData(
+  userId: string,
+  sensorId: string,
+  newData: SensorValue
+): Promise<void> {
+  try {
+    await verifyDeviceOwnership(userId, sensorId); // Verifikasi kepemilikan
+
+    // Timestamp akan digunakan sebagai kunci unik di path
+    const timestampKey = newData.timestamp.toString();
+    const docRef = ref(rtdb, `sensor/${sensorId}/data/${timestampKey}`); // PERBAIKAN: Tambahkan /data
+
+    // Gunakan set() untuk membuat record baru
+    await set(docRef, newData);
+    console.log(`Data sensor baru dengan kunci ${timestampKey} berhasil ditambahkan.`);
+  } catch (error) {
+    console.error(`Gagal menambah data sensor baru:`, error);
+    throw error;
+  }
+}
+
+/**
  * Menghapus semua data untuk sensorId tertentu di RTDB setelah verifikasi.
  * @param userId - ID pengguna untuk verifikasi.
  * @param sensorId - ID sensor (authToken).
@@ -213,7 +243,7 @@ export async function deleteSensorData(userId: string, sensorId: string): Promis
   try {
     await verifyDeviceOwnership(userId, sensorId); // Verifikasi kepemilikan
 
-    const dataRef = ref(rtdb, `sensor/${sensorId}/data`);
+    const dataRef = ref(rtdb, `sensor/${sensorId}/data`); // PERBAIKAN: Tambahkan /data
     await remove(dataRef);
     console.log(`Successfully deleted all data for sensor ${sensorId}`);
   } catch (error) {
@@ -238,7 +268,7 @@ export async function editSensorDataByTimestamp(
   try {
     await verifyDeviceOwnership(userId, sensorId); // Verifikasi kepemilikan
 
-    const docRef = ref(rtdb, `sensor/${sensorId}/data/${timestampKey}`);
+    const docRef = ref(rtdb, `sensor/${sensorId}/data/${timestampKey}`); // PERBAIKAN: Tambahkan /data
     await update(docRef, newData);
     console.log(`Data sensor dengan kunci ${timestampKey} berhasil diupdate.`);
   } catch (error) {
@@ -261,7 +291,7 @@ export async function deleteSensorDataByTimestamp(
   try {
     await verifyDeviceOwnership(userId, sensorId); // Verifikasi kepemilikan
 
-    const docRef = ref(rtdb, `sensor/${sensorId}/data/${timestampKey}`);
+    const docRef = ref(rtdb, `sensor/${sensorId}/data/${timestampKey}`); // PERBAIKAN: Tambahkan /data
     await remove(docRef);
     console.log(`Data sensor dengan kunci ${timestampKey} berhasil dihapus.`);
   } catch (error) {

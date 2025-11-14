@@ -149,7 +149,7 @@ export default function DashboardPage() {
       <Card className="shadow-lg bg-gradient-to-r from-blue-500 to-cyan-500 text-white dark:from-blue-600 dark:to-cyan-600">
         <CardContent className="p-6 flex flex-col md:flex-row justify-between items-center gap-4">
           <div>
-            <h3 className="text-2xl font-bold">Selamat Datang, {user?.displayName || user?.email}!</h3>
+            <h3 className="text-2xl font-bold">Selamat Datang, {user?.displayName}!</h3>
           </div>
           <div className="flex items-center gap-6 text-right">
             <div className="flex items-center gap-2">
