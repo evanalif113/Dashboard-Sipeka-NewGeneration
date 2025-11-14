@@ -67,7 +67,8 @@ export async function fetchLogs(userId: string, limitCount = 100): Promise<LogEv
     return querySnapshot.docs.map(formatLog)
   } catch (error) {
     console.error("Error fetching logs from Firestore:", error)
-    return []
+    // PERBAIKAN: Lempar error agar bisa ditangani oleh UI
+    throw error;
   }
 }
 
@@ -125,7 +126,10 @@ export async function fetchFilteredLogs(userId: string, filters: LogFilters): Pr
     return logs
   } catch (error) {
     console.error("Error filtering logs from Firestore:", error)
-    return []
+    // PERBAIKAN: Lempar error agar bisa ditangani oleh UI
+    // Jika error ini muncul di console, kemungkinan besar Anda perlu membuat Indeks di Firestore.
+    // Firebase biasanya akan memberikan link untuk membuat indeks secara otomatis di pesan error console.
+    throw error;
   }
 }
 
@@ -149,7 +153,9 @@ export async function fetchRecentAlerts(userId: string, limitCount = 5): Promise
     return querySnapshot.docs.map(formatLog)
   } catch (error) {
     console.error("Error fetching recent alerts from Firestore:", error)
-    return []
+    // PERBAIKAN: Lempar error agar bisa ditangani oleh UI
+    // Jika error ini muncul di console, kemungkinan besar Anda perlu membuat Indeks di Firestore.
+    throw error;
   }
 }
 
@@ -186,8 +192,11 @@ export async function deleteLogEvent(userId: string, logId: string): Promise<voi
 
     // Verifikasi bahwa pengguna memiliki izin untuk menghapus log ini
     const logSnap = await getDoc(logDocRef)
-    if (!logSnap.exists() || logSnap.data().userId !== userId) {
-      throw new Error("Log not found or permission denied.")
+    if (!logSnap.exists()) {
+        throw new Error("Log not found.");
+    }
+    if (logSnap.data().userId !== userId) {
+      throw new Error("Permission denied.");
     }
 
     await deleteDoc(logDocRef)

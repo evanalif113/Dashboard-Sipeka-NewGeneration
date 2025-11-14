@@ -3,7 +3,7 @@
 import type React from "react"
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { LayoutDashboard, Network, Database, ChartNoAxesCombined, User } from "lucide-react"
+import { LayoutDashboard, Network, Database, ChartNoAxesCombined, Logs, User } from "lucide-react"
 import { useAuth } from "@/hooks/useAuth"
 import { signOutUser } from "@/lib/FetchingAuth"
 import { Sidebar } from "@/components/dashboard/Sidebar"
@@ -47,6 +47,7 @@ export default function DashboardLayout({
     { name: "Beranda", href: "/dashboard", icon: LayoutDashboard },
     { name: "Perangkat", href: "/dashboard/perangkat", icon: Network },
     { name: "Data", href: "/dashboard/data", icon: Database },
+    { name: "Log", href: "/dashboard/log", icon: Logs },
     { name: "Analisis", href: "/dashboard/analisis", icon: ChartNoAxesCombined },
     { name: "Profil", href: "/dashboard/profil", icon: User },
   ]
