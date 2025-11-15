@@ -75,7 +75,7 @@ export function EmptyState({ type, title, description, actionLabel, onAction }: 
     if (onAction) {
       onAction()
     } else {
-      router.push("/dashboard/devices")
+      router.push("/dashboard/perangkat")
     }
   }
 
