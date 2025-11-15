@@ -47,8 +47,8 @@ export default function DashboardLayout({
     { name: "Beranda", href: "/dashboard", icon: LayoutDashboard },
     { name: "Perangkat", href: "/dashboard/perangkat", icon: Network },
     { name: "Data", href: "/dashboard/data", icon: Database },
+    { name: "Visualisasi", href: "/dashboard/visualisasi", icon: ChartNoAxesCombined },
     { name: "Log", href: "/dashboard/log", icon: Logs },
-    { name: "Analisis", href: "/dashboard/analisis", icon: ChartNoAxesCombined },
     { name: "Profil", href: "/dashboard/profil", icon: User },
   ]
 

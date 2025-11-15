@@ -254,7 +254,7 @@ export default function AuthPage() {
       {/* Overlay untuk menggelapkan background dan meningkatkan kontras */}
       <div className="absolute inset-0 bg-black/60 dark:bg-black/70"></div>
 
-      <Card className="relative z-10 w-full max-w-md shadow-2xl border-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm dark:text-gray-100">
+      <Card className="relative z-10 w-full max-w-md shadow-2xl border-0 bg-blue-200/80 dark:bg-slate-900/80 backdrop-blur-sm dark:text-gray-100">
         <CardHeader className="text-center pb-2">
           <div className="flex justify-center items-center mb-4">
             <Image
@@ -268,7 +268,7 @@ export default function AuthPage() {
           <CardTitle className="text-2xl font-bold text-gray-900 dark:text-gray-100">
             SIPEKA
           </CardTitle>
-          <CardDescription className="text-gray-600 dark:text-gray-300">
+          <CardDescription className="text-sm text-gray-800 dark:text-gray-300">
             {isSignUp
               ? "Buat akun Anda untuk menggunakan dashboard"
               : "Masuk dengan akun Anda untuk mengakses dashboard"}
@@ -308,7 +308,7 @@ export default function AuthPage() {
             {/* General Error */}
             {errors.general && (
               <Alert variant="destructive">
-                <XCircle className="h-4 w-4" />
+                <XCircle className="h-5 w-5" />
                 <AlertDescription>{errors.general}</AlertDescription>
               </Alert>
             )}
@@ -323,7 +323,7 @@ export default function AuthPage() {
                   Nama Lengkap
                 </Label>
                 <div className="relative">
-                  <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <User className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
                   <Input
                     id="name"
                     type="text"
@@ -357,7 +357,7 @@ export default function AuthPage() {
                 Email
               </Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <Mail className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
                 <Input
                   id="email"
                   type="email"
@@ -393,7 +393,7 @@ export default function AuthPage() {
                 Kata Sandi
               </Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <Lock className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
@@ -415,9 +415,9 @@ export default function AuthPage() {
                   className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
                 >
                   {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
+                    <EyeOff className="h-5 w-5" />
                   ) : (
-                    <Eye className="h-4 w-4" />
+                    <Eye className="h-5 w-5" />
                   )}
                 </button>
               </div>
@@ -481,7 +481,7 @@ export default function AuthPage() {
                   Konfirmasi Kata Sandi
                 </Label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <Lock className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
                   <Input
                     id="confirmPassword"
                     type={showConfirmPassword ? "text" : "password"}
@@ -504,14 +504,14 @@ export default function AuthPage() {
                     className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
                   >
                     {showConfirmPassword ? (
-                      <EyeOff className="h-4 w-4" />
+                      <EyeOff className="h-5 w-5" />
                     ) : (
-                      <Eye className="h-4 w-4" />
+                      <Eye className="h-5 w-5" />
                     )}
                   </button>
                   {formData.confirmPassword &&
                     formData.password === formData.confirmPassword && (
-                      <CheckCircle className="absolute right-10 top-3 h-4 w-4 text-green-500" />
+                      <CheckCircle className="absolute right-10 top-3 h-5 w-5 text-green-500" />
                     )}
                 </div>
                 {errors.confirmPassword && (
