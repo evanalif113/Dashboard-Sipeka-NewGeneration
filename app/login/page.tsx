@@ -247,8 +247,14 @@ export default function AuthPage() {
   const passwordStrength = getPasswordStrength(formData.password);
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center p-4 overflow-hidden  bg-white dark:bg-slate-900">
-      <Card className="relative z-10 w-full max-w-md shadow-2xl border-0 bg-white/95 dark:bg-slate-800/95 dark:text-gray-100 backdrop-blur-sm">
+    <div
+      className="relative min-h-screen flex items-center justify-center p-4 overflow-hidden bg-cover bg-center"
+      style={{ backgroundImage: "url('/img/background.jpeg')" }}
+    >
+      {/* Overlay untuk menggelapkan background dan meningkatkan kontras */}
+      <div className="absolute inset-0 bg-black/60 dark:bg-black/70"></div>
+
+      <Card className="relative z-10 w-full max-w-md shadow-2xl border-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm dark:text-gray-100">
         <CardHeader className="text-center pb-2">
           <div className="flex justify-center items-center mb-4">
             <Image

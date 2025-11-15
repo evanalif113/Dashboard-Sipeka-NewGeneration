@@ -31,7 +31,7 @@ import {
   Waves,
   Wind,
   Plus,
-  Edit,
+  FlaskConical,
   Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -761,8 +761,8 @@ export default function DataPage() {
           {activeTab === 'grafik' && (
             <div className="grid grid-cols-1 gap-6">
               <ChartCard title="Suhu" data={temperatures} color={chartColors.temperature} Icon={ThermometerSun} />
-              <ChartCard title="pH Level" data={phLevels} color={chartColors.phlevel} Icon={Waves} />
-              <ChartCard title="Amonia" data={ammoniaLevels} color={chartColors.ammonia} Icon={Wind} />
+              <ChartCard title="pH Level" data={phLevels} color={chartColors.phlevel} Icon={FlaskConical} />
+              <ChartCard title="Amonia" data={ammoniaLevels} color={chartColors.ammonia} Icon={Waves} />
             </div>
           )}
 
