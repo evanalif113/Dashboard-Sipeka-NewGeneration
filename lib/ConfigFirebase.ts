@@ -14,6 +14,11 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 }
 
+if (!firebaseConfig.apiKey) {
+  // Fail fast to surface missing or misnamed environment variables
+  throw new Error("Missing NEXT_PUBLIC_FIREBASE_API_KEY env variable")
+}
+
 // Initialize Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]
 

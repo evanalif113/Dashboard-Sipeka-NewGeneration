@@ -20,11 +20,13 @@ import {
   ClockIcon,
 } from "lucide-react"
 import { EmptyState } from "@/components/empty-state"
+import Link from "next/link"
 import { useAuth } from "@/hooks/useAuth"
 import Loading from "../loading"
 import { fetchAllDevices, Device } from "@/lib/FetchingDevice"
 import { fetchSensorMetadata, fetchSensorData, SensorDate } from "@/lib/FetchingSensorData"
 import { fetchRecentAlerts, LogEvent } from "@/lib/FetchingLogs"
+import { getStatusPH, getStatusSuhu, getStatusAmoniak, getOverallStatus, getOverallStatusDisplay } from "@/lib/StatusUtils"
 
 interface DeviceWithStatus extends Device {
   status: "online" | "offline"
@@ -214,30 +216,59 @@ export default function DashboardPage() {
               devices
                 .filter((d) => d.status === "online")
                 .slice(0, 3)
-                .map((device) => (
-                  <div
-                    key={device.id}
-                    className="flex items-center justify-between p-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg dark:bg-gradient-to-r dark:from-gray-700/50 dark:to-gray-700"
-                  >
-                    <div>
-                      <h4 className="font-medium text-gray-800 dark:text-gray-200">{device.name}</h4>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">{device.location}</p>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Badge variant="default" className="bg-gradient-to-r from-green-500 to-emerald-500 text-white">
-                        <WifiIcon className="h-3 w-3 mr-1" />
-                        Online
-                      </Badge>
-                      <div className="text-right">
-                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200">{device.latestData?.ph_level.toFixed(1) ?? "N/A"} pH</div>
-                        <div className="flex items-center text-gray-600 dark:text-gray-400">
-                          <WavesIcon className="h-3 w-3" />
-                          <span className="text-xs ml-1">pH Level</span>
+                .map((device) => {
+                  const ph = device.latestData?.ph_level
+                  const suhu = device.latestData?.suhu
+                  const amonia = device.latestData?.amonia
+
+                  let overallLabel: string | null = null
+                  let overallClass = "text-gray-500"
+                  let overallEmoji = ""
+
+                  if (ph !== undefined && suhu !== undefined && amonia !== undefined) {
+                    const phStatus = getStatusPH(ph).status
+                    const suhuStatus = getStatusSuhu(suhu).status
+                    const amoniakStatus = getStatusAmoniak(amonia).status
+                    const overall = getOverallStatus(phStatus, suhuStatus, amoniakStatus)
+                    const disp = getOverallStatusDisplay(overall)
+                    overallLabel = overall
+                    overallClass = disp.className
+                    overallEmoji = disp.emoji
+                  }
+
+                  return (
+                    <div
+                      key={device.id}
+                      className="flex items-center justify-between p-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg dark:bg-gradient-to-r dark:from-gray-700/50 dark:to-gray-700"
+                    >
+                      <div>
+                        <h4 className="font-medium text-gray-800 dark:text-gray-200">{device.name}</h4>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">{device.location}</p>
+                        <div className={`text-xs mt-1 font-medium ${overallClass}`}>
+                          {overallLabel ? `${overallEmoji} ${overallLabel}` : "Status: N/A"}
                         </div>
                       </div>
+                      <div className="flex items-center space-x-2">
+                        <Badge variant="default" className="bg-gradient-to-r from-green-500 to-emerald-500 text-white">
+                          <WifiIcon className="h-3 w-3 mr-1" />
+                          Online
+                        </Badge>
+                        <div className="text-right">
+                          <div className="text-sm font-medium text-gray-800 dark:text-gray-200">{device.latestData?.ph_level.toFixed(1) ?? "N/A"} pH</div>
+                          <div className="flex items-center text-gray-600 dark:text-gray-400">
+                            <WavesIcon className="h-3 w-3" />
+                            <span className="text-xs ml-1">pH Level</span>
+                          </div>
+                        </div>
+                        <Link href={`/dashboard/perangkat/${device.id}`} className="ml-2">
+                          <Button size="sm" variant="outline" className="text-blue-700 border-blue-300 hover:bg-blue-50 dark:text-blue-300 dark:border-blue-600 dark:hover:bg-blue-900/20">
+                            Detail
+                          </Button>
+                        </Link>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  )
+                })
             )}
           </CardContent>
         </Card>
