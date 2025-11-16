@@ -14,7 +14,7 @@ export interface StatusDetail {
  */
 export function getStatusPH(ph_level: number): StatusDetail {
   // ✅ Aman 6.8 - 7.8
-  if (ph_level >= 6.8 && ph_level <= 7.8) {
+  if (ph_level >= 6.5 && ph_level <= 9.0) {
     return {
       status: "Aman",
       rekomendasi:
@@ -49,7 +49,7 @@ export function getStatusPH(ph_level: number): StatusDetail {
  */
 export function getStatusSuhu(suhu: number): StatusDetail {
   // ✅ Aman 25 - 30 °C
-  if (suhu >= 25 && suhu <= 30) {
+  if (suhu >= 26 && suhu <= 30) {
     return {
       status: "Aman",
       rekomendasi:
