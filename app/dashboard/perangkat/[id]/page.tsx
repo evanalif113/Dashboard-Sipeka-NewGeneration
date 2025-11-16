@@ -6,7 +6,7 @@ import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { AlertTriangleIcon, ChevronLeftIcon, ThermometerIcon, WavesIcon, DropletsIcon } from "lucide-react"
+import { AlertTriangleIcon, ChevronLeftIcon, ThermometerIcon, WavesIcon, DropletsIcon, Loader2 } from "lucide-react"
 import { useAuth } from "@/hooks/useAuth"
 import Loading from "../../../loading"
 import { fetchDevice } from "@/lib/FetchingDevice"
@@ -22,6 +22,7 @@ export default function DeviceDetailPage() {
   const [device, setDevice] = useState<any | null>(null)
   const [latest, setLatest] = useState<SensorDate | null>(null)
   const [status, setStatus] = useState<"online" | "offline">("offline")
+  const [sensorLoading, setSensorLoading] = useState(true)
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login")
@@ -30,6 +31,7 @@ export default function DeviceDetailPage() {
   useEffect(() => {
     const load = async () => {
       if (!user?.uid || !deviceId) return
+      setSensorLoading(true)
       const d = await fetchDevice(user.uid, deviceId)
       if (!d) {
         router.replace("/dashboard/perangkat")
@@ -38,12 +40,16 @@ export default function DeviceDetailPage() {
       setDevice(d)
 
       const sensorToken = d.authToken || d.id
-      const [meta, dataArr] = await Promise.all([
-        fetchSensorMetadata(user.uid, sensorToken),
-        fetchSensorData(user.uid, sensorToken, 1),
-      ])
-      setStatus(meta.TelemetryStatus)
-      setLatest(dataArr.length ? dataArr[0] : null)
+      try {
+        const [meta, dataArr] = await Promise.all([
+          fetchSensorMetadata(user.uid, sensorToken),
+          fetchSensorData(user.uid, sensorToken, 1),
+        ])
+        setStatus(meta.TelemetryStatus)
+        setLatest(dataArr.length ? dataArr[0] : null)
+      } finally {
+        setSensorLoading(false)
+      }
     }
     load()
   }, [user?.uid, deviceId, router])
@@ -59,26 +65,14 @@ export default function DeviceDetailPage() {
   }, [latest])
 
   if (authLoading || (!user && !authLoading)) return <Loading />
-  if (!device) return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link href="/dashboard/perangkat"><Button variant="outline"><ChevronLeftIcon className="h-4 w-4 mr-1"/>Kembali</Button></Link>
-          <h2 className="text-xl font-semibold">Perangkat</h2>
-        </div>
-      </div>
-      <Card>
-        <CardContent className="p-6">Memuat detail perangkat...</CardContent>
-      </Card>
-    </div>
-  )
+  if (!device) return <Loading />
 
   return (
     <div className="space-y-6">
       {/* Header with Back Button */}
       <div className="flex items-center gap-3">
-        <Link href="/dashboard/perangkat">
-          <Button variant="outline" className="bg-white dark:bg-gray-800">
+        <Link href="/dashboard">
+          <Button variant="outline" className="bg-white text-gray-900  dark:bg-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700">
             <ChevronLeftIcon className="h-4 w-4 mr-1"/>
             Kembali
           </Button>
@@ -86,7 +80,7 @@ export default function DeviceDetailPage() {
       </div>
 
       {/* Device Info Card */}
-      <Card className="shadow-lg bg-gradient-to-r from-blue-500 to-cyan-500 text-white dark:from-blue-600 dark:to-cyan-600">
+      <Card className="shadow-lg bg-gradient-to-r from-blue-500 to-indigo-500 text-white dark:from-blue-600 dark:to-cyan-600">
         <CardContent className="p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -96,16 +90,30 @@ export default function DeviceDetailPage() {
                 <div className="text-sm">
                   <span className="opacity-80">Koordinat: </span>
                   <span className="font-medium">
-                    {device.coordinates.lat.toFixed(4)}, {device.coordinates.lng.toFixed(4)}
+                    {device.coordinates.lat.toFixed(2)}, 
+                    {device.coordinates.lng.toFixed(2)}
                   </span>
                 </div>
               </div>
             </div>
             <Badge 
-              variant={status === "online" ? "default" : "destructive"} 
-              className={`${status === "online" ? "bg-green-500 hover:bg-green-600" : "bg-red-500 hover:bg-red-600"} text-white px-4 py-2 text-base`}
+              variant={sensorLoading ? "outline" : status === "online" ? "default" : "destructive"} 
+              className={`${
+                sensorLoading 
+                  ? "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300" 
+                  : status === "online" 
+                  ? "bg-green-500 hover:bg-green-600" 
+                  : "bg-red-500 hover:bg-red-600"
+              } text-white px-4 py-2 text-base transition-colors`}
             >
-              {status === "online" ? "● Online" : "● Offline"}
+              {sensorLoading ? (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Memuat...</span>
+                </div>
+              ) : (
+                status === "online" ? "● Online" : "● Offline"
+              )}
             </Badge>
           </div>
         </CardContent>
@@ -115,10 +123,10 @@ export default function DeviceDetailPage() {
       <Card className="border-l-4 border-l-indigo-500 dark:border-l-indigo-400 dark:bg-gray-800/50">
         <CardHeader>
           <CardTitle className="flex items-center text-indigo-800 dark:text-indigo-300">
-            Status Ringkas
+            Status Detail
           </CardTitle>
           <CardDescription className="text-gray-600 dark:text-gray-400">
-            Kondisi perangkat saat ini
+            Kualitas Air saat ini
           </CardDescription>
         </CardHeader>
         <CardContent>
