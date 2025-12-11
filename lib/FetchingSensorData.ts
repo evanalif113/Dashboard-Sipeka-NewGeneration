@@ -4,6 +4,7 @@ import {
   ref,
   query as rtdbQuery,
   orderByChild,
+  orderByKey,
   limitToLast,
   get,
   remove,
@@ -101,21 +102,22 @@ export async function fetchSensorDataByDateRange(
   try {
     await verifyDeviceOwnership(userId, sensorId); // Verifikasi kepemilikan
 
-    const dataRef = ref(rtdb, `sensor/${sensorId}/data`); // PERBAIKAN: Tambahkan /data
-    const q = rtdbQuery(
-      dataRef,
+    const dataRef = rtdbQuery(
+      ref(rtdb, `sensor/${sensorId}/data`),
       orderByChild("timestamp"),
       startAt(startTimestamp),
       endAt(endTimestamp)
     );
 
-    const snapshot = await get(q);
+    const snapshot = await get(dataRef);
 
     if (!snapshot.exists()) {
+      console.log("No data found in the specified date range.");
       return [];
     }
 
     const results: SensorDate[] = [];
+    
     snapshot.forEach((childSnapshot) => {
       const key = childSnapshot.key;
       const val = childSnapshot.val() as SensorValue;
